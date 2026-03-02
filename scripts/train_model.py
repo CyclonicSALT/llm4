@@ -161,6 +161,8 @@ def main():
     if use_lora:
         print("Merging LoRA and saving full model...")
         model = model.merge_and_unload()
+        # Trainer still held reference to the PEFT model; save_model() would write adapter only. Use merged model.
+        trainer.model = model
     # Ensure config vocab_size matches tokenizer so loading later does not mismatch
     model.config.vocab_size = len(tokenizer)
     # Ensure model_type is set so AutoModelForCausalLM.from_pretrained() recognizes the model (required on some envs)
