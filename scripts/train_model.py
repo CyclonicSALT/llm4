@@ -163,8 +163,19 @@ def main():
         model = model.merge_and_unload()
     # Ensure config vocab_size matches tokenizer so loading later does not mismatch
     model.config.vocab_size = len(tokenizer)
+    # Ensure model_type is set so AutoModelForCausalLM.from_pretrained() recognizes the model (required on some envs)
+    model.config.model_type = getattr(model.config, "model_type", None) or "qwen2"
     trainer.save_model(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
+    # Ensure config.json on disk has model_type (AutoModel requires it on load)
+    config_path = output_dir / "config.json"
+    if config_path.exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        if cfg.get("model_type") is None:
+            cfg["model_type"] = "qwen2"
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
     # Remove PEFT adapter artifacts so loader treats this as a full model, not base+adapter
     for f in ("adapter_config.json", "adapter_model.safetensors"):
         p = output_dir / f
