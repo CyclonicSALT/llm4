@@ -14,7 +14,7 @@ Several suggestions (multiple seeds, rank sweep, smarter RAG) increase compute. 
 
 2. **High value, low cost**
    - **Validation split everywhere** — do it by default for every stage (see §1).
-   - **Bootstrap confidence intervals** on the main metric(s).
+   - **Bootstrap confidence intervals** on the main metric(s) — high value, low cost; do it whenever you report or compare results (see §3).
 
 3. **Next**
    - **Ablation table** (all stages on the same test set); **RAG on/off** if the code supports it (see §9).
@@ -111,15 +111,17 @@ Several suggestions (multiple seeds, rank sweep, smarter RAG) increase compute. 
 
 ## 5. Multiple seeds and averaging
 
-**Recommendation: Required for the main result.** The core claim is “guided > random” (or “guided > balanced random”). At this scale, a single seed can flip that comparison. **At least 3 seeds on Phase 1 (and on the balanced baseline you compare to)** should be treated as required for the main claim. Other stages can stay single-seed unless you are making stage-wise claims.
+**Recommendation: Required for the main result.** The core claim is “guided > random” (or “guided > balanced random”). At this scale, a single seed can flip that comparison. **At least 3 seeds (≥3) on Phase 1 and on the balanced baseline** should be treated as required for the main claim. **Later stages do not need multi-seed by default:** probe_guided, MoE, prune, QAT, and RAG can stay single-seed unless you are making stage-wise claims (e.g. "pruning does not hurt"). Ablation runs (comparing stages on the same test set) also typically use one seed per configuration. That keeps the extra compute to Phase 1 and the baseline, not a full tripling of every stage.
 
 **How it could be implemented**
 - Add a `--seed` (or `seed` in config) to the training entrypoint; pass it to `SFTConfig` (e.g. `seed=args.seed`) and to any data shuffling/splitting.
 - Run the same stage multiple times (e.g. seeds 42, 43, 44), each writing to a different output dir or subdir (e.g. `output/seed_42/`).
 - For evaluation: run the same eval script on each checkpoint; collect metrics per seed; report mean and std (or median and IQR) in a small table or in the existing compare/output scripts.
 
+**Logging and aggregation:** With multiple seeds, stages, and an ablation table all producing JSON (or similar) outputs, use a **consistent naming convention** from the start (e.g. `stage0_seed42_scores.json`, or `scores/stage0/seed42.json`). Add a small **aggregation script** that reads these files and produces a single comparison table (e.g. mean ± std per stage/seed). Otherwise comparing results across seeds and stages becomes manual and error-prone.
+
 **Challenges**
-- 3–5× compute for the stages where you run multiple seeds; focus on Phase 1 and the balanced baseline for the main claim.
+- 3–5× compute only for the stages where you run multiple seeds; focus on Phase 1 and the balanced baseline for the main claim.
 - A small script or loop to launch N seeds and aggregate results avoids manual copy-paste.
 
 **Reasons to do it**
@@ -205,6 +207,8 @@ Several suggestions (multiple seeds, rank sweep, smarter RAG) increase compute. 
 
 **Implementation note (RAG on/off):** The current architecture may not cleanly support “run the same model with RAG disabled” without some refactoring. Before committing to a RAG ablation, check whether the inference path can already run the same checkpoint with retrieval/injection turned off (e.g. via a flag or a separate code path). If not, a small code change (e.g. a `--no-rag` flag or a separate inference entrypoint) may be needed. Decide this before promising a RAG-on vs RAG-off row in the ablation table.
 
+**Logging and aggregation:** Reuse the same convention and aggregation approach as for multi-seed (§5): stage outputs (e.g. `stage0_scores.json`, `stage3_moe_scores.json`) should follow a predictable naming and path pattern so one script can load all of them and build the ablation table. Doing this early avoids ad-hoc paths and makes it easy to add new stages or seeds later.
+
 **Challenges**
 - You must have (or train) checkpoints for each stage and run eval on each; some bookkeeping.
 - RAG vs no-RAG: see implementation note above.
@@ -265,7 +269,7 @@ Several suggestions (multiple seeds, rank sweep, smarter RAG) increase compute. 
 |------------|------------------------|----------------|----------------|
 | Validation split + val loss | Low | Consistent split across stages | **Do it everywhere** (unconditional). |
 | LR schedule for from-scratch | Low | Don’t break fine-tuning | Do it if you iterate on Stage 0. |
-| Bootstrap CIs | Low | Slightly longer eval | Do it if you report numbers. |
+| Bootstrap CIs | Low | Slightly longer eval | **High value, low cost;** do it when reporting or comparing results. |
 | Stratified test set | Medium | Define strata, store labels | Do it if you care about subgroups. |
 | Multiple seeds | Low (scripting) | More compute | **Required for main claim** (≥3 seeds on Phase 1 and balanced baseline). |
 | Failure mode categorization | Medium | Heuristics or manual labels | Do it if you iterate on data. |
