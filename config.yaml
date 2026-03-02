@@ -1,0 +1,71 @@
+# LLM4 - Data efficiency experiment (no pretraining, stacking with load-from-prev)
+# All paths relative for Kaggle / Linux
+
+base_model: Qwen/Qwen2.5-0.5B-Instruct
+model_cache: ./models/base
+
+# Data paths
+train_100: ./data/train_100.jsonl
+train_1000: ./data/train_1000.jsonl
+test_200: ./data/test_200.jsonl
+cot_train: ./data/cot_train.jsonl
+enhanced_train: ./data/enhanced_train.jsonl
+failures_data: ./data/probe_failures.jsonl
+rag_documents: ./data/rag_documents/arithmetic_facts.jsonl
+
+# Model output paths (stacking: each stage loads previous)
+base_output: ./models/base
+cot_output: ./models/cot
+probe_guided_output: ./models/probe_guided
+moe_output: ./models/moe
+pruned_output: ./models/pruned
+final_output: ./models/final
+output_dir: ./output
+
+# Phase 1 specific
+random_100_output: ./models/random_100
+random_1000_output: ./models/random_1000
+guided_100_output: ./models/guided_100
+
+# Training
+max_seq_length: 256
+batch_size: 1
+gradient_accumulation: 16
+epochs: 1
+learning_rate: 2.0e-4
+lora_r: 8
+lora_alpha: 16
+use_cpu: true
+dtype: float32
+save_strategy: steps
+save_steps: 5
+save_total_limit: 2
+
+# Per stage
+stage1_cot_samples: 100
+stage2_targeted_samples: 100
+stage3_moe_samples: 100
+stage4_prune_samples: 100
+stage5_qat_samples: 100
+targeted_examples_per_gap: 20
+difficulty_levels: 3
+qat_max_epochs: 3
+pruning_target_sparsity: 0.2
+preserve_attention: true
+qat_bits: 4
+qat_calibration_samples: 200
+
+# MoE
+num_experts: 4
+experts_per_token: 2
+expert_categories:
+  - addition
+  - subtraction
+  - multiplication
+  - division_and_mixed
+
+# RAG
+rag_db_path: ./rag/chroma_db
+rag_embedding_model: all-MiniLM-L6-v2
+rag_top_k: 3
+rag_chunk_size: 256

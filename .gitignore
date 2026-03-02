@@ -1,0 +1,35 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Model weights and outputs (large)
+models/
+output/
+
+# RAG index (built by build_index.py)
+rag/chroma_db/
+
+# Generated data (created by generate_arithmetic.py on first run)
+data/*.jsonl
+data/rag_documents/
+
+# Keep data directory
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
