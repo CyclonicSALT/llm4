@@ -78,12 +78,14 @@ def main():
 
     print(f"Loading model from {model_path}...")
     tokenizer = AutoTokenizer.from_pretrained(str(model_path), trust_remote_code=True)
+    # ignore_mismatched_sizes=True allows loading when vocab/embedding was resized (e.g. from-scratch)
     model = AutoModelForCausalLM.from_pretrained(
         str(model_path),
         trust_remote_code=True,
         torch_dtype="float32",
         device_map=get_device_map(),
         low_cpu_mem_usage=True,
+        ignore_mismatched_sizes=True,
     )
     model.eval()
 

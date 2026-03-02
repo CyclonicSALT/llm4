@@ -161,8 +161,16 @@ def main():
     if use_lora:
         print("Merging LoRA and saving full model...")
         model = model.merge_and_unload()
+    # Ensure config vocab_size matches tokenizer so loading later does not mismatch
+    model.config.vocab_size = len(tokenizer)
     trainer.save_model(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
+    # Remove PEFT adapter artifacts so loader treats this as a full model, not base+adapter
+    for f in ("adapter_config.json", "adapter_model.safetensors"):
+        p = output_dir / f
+        if p.exists():
+            p.unlink()
+            print(f"Removed {f} so directory loads as full model.")
     if trainer.state.log_history and "loss" in trainer.state.log_history[-1]:
         print(f"Final loss: {trainer.state.log_history[-1]['loss']:.4f}")
     print("Done.")
