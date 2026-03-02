@@ -164,18 +164,26 @@ def main():
     # Ensure config vocab_size matches tokenizer so loading later does not mismatch
     model.config.vocab_size = len(tokenizer)
     # Ensure model_type is set so AutoModelForCausalLM.from_pretrained() recognizes the model (required on some envs)
-    model.config.model_type = getattr(model.config, "model_type", None) or "qwen2"
+    model_type = getattr(model.config, "model_type", None) or "qwen2"
+    model.config.model_type = model_type
     trainer.save_model(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
-    # Ensure config.json on disk has model_type (AutoModel requires it on load)
+    # Ensure config.json on disk has model_type (AutoModel requires it on load; some envs/save paths omit it)
     config_path = output_dir / "config.json"
     if config_path.exists():
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
         if cfg.get("model_type") is None:
-            cfg["model_type"] = "qwen2"
+            cfg["model_type"] = model_type
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(cfg, f, indent=2)
+    else:
+        # Some save paths (e.g. after merge_and_unload) may not write config.json; create it so from_pretrained works
+        cfg = model.config.to_dict()
+        if cfg.get("model_type") is None:
+            cfg["model_type"] = model_type
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
     # Remove PEFT adapter artifacts so loader treats this as a full model, not base+adapter
     for f in ("adapter_config.json", "adapter_model.safetensors"):
         p = output_dir / f

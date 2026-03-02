@@ -76,6 +76,19 @@ def main():
         print(f"Model path not found: {args.model}")
         sys.exit(1)
 
+    # Ensure config.json has model_type so AutoModelForCausalLM.from_pretrained() can recognize the model
+    config_path = Path(model_path) / "config.json"
+    if config_path.exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg_dict = json.load(f)
+        if cfg_dict.get("model_type") is None:
+            base_model_name = config.get("base_model", "Qwen/Qwen2.5-0.5B-Instruct")
+            from transformers import AutoConfig
+            base_cfg = AutoConfig.from_pretrained(base_model_name, trust_remote_code=True)
+            cfg_dict["model_type"] = getattr(base_cfg, "model_type", "qwen2")
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(cfg_dict, f, indent=2)
+
     print(f"Loading model from {model_path}...")
     tokenizer = AutoTokenizer.from_pretrained(str(model_path), trust_remote_code=True)
     # ignore_mismatched_sizes=True allows loading when vocab/embedding was resized (e.g. from-scratch)
