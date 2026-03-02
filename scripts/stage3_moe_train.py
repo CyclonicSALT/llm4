@@ -54,8 +54,8 @@ def main():
     probe_guided_path = PROJECT_ROOT / config["probe_guided_output"].replace("./", "")
     moe_output = PROJECT_ROOT / config["moe_output"].replace("./", "")
     enhanced_train_path = PROJECT_ROOT / config["enhanced_train"].replace("./", "")
-    train_1000_path = PROJECT_ROOT / config["train_1000"].replace("./", "")
-    samples_per_expert = config.get("stage3_moe_samples", 100)
+    train_base_path = PROJECT_ROOT / config["train_5000"].replace("./", "")
+    samples_per_expert = config.get("stage3_moe_samples", 500)
 
     print("Stage 3: MoE - load probe_guided, train 4 experts -> models/moe/")
     if not (probe_guided_path / "config.json").exists():
@@ -65,9 +65,9 @@ def main():
     expert_names = ["addition", "subtraction", "multiplication", "division_and_mixed"]
     expert_label = {e: i for i, e in enumerate(expert_names)}
 
-    # Router on train_1000
+    # Router on train_5000
     X_router, y_router = [], []
-    with open(train_1000_path, "r", encoding="utf-8") as f:
+    with open(train_base_path, "r", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue

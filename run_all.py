@@ -31,7 +31,7 @@ def main():
 
     # Phase 1
     run([sys.executable, str(PROJECT_ROOT / "data" / "generate_arithmetic.py")], "Generate datasets")
-    run([sys.executable, str(scripts / "phase1_baseline.py")], "Phase 1: Clean baseline (random_100, random_1000, guided_100)")
+    run([sys.executable, str(scripts / "phase1_baseline.py")], "Phase 1: Clean baseline (random_5k, random_50k, guided_5k)")
 
     # Phase 2: stacking (each stage loads previous)
     run([sys.executable, str(scripts / "stage0_train_base.py")], "Stage 0: Train base from scratch -> models/base")

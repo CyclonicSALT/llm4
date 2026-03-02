@@ -7,11 +7,17 @@ model_cache: ./models/base
 # Data paths
 train_100: ./data/train_100.jsonl
 train_1000: ./data/train_1000.jsonl
+train_5000: ./data/train_5000.jsonl
+train_50000: ./data/train_50000.jsonl
 test_200: ./data/test_200.jsonl
 cot_train: ./data/cot_train.jsonl
 enhanced_train: ./data/enhanced_train.jsonl
 failures_data: ./data/probe_failures.jsonl
 rag_documents: ./data/rag_documents/arithmetic_facts.jsonl
+
+# Stage 0 base training (scaled: use train_5000)
+stage0_train_data: ./data/train_5000.jsonl
+stage0_samples: 5000
 
 # Model output paths (stacking: each stage loads previous)
 base_output: ./models/base
@@ -22,10 +28,15 @@ pruned_output: ./models/pruned
 final_output: ./models/final
 output_dir: ./output
 
-# Phase 1 specific
+# Phase 1 specific (small scale: 100/1000; large scale: 5000/50000)
+phase1_base_size: 5000
+phase1_large_size: 50000
 random_100_output: ./models/random_100
 random_1000_output: ./models/random_1000
 guided_100_output: ./models/guided_100
+random_5k_output: ./models/random_5k
+random_50k_output: ./models/random_50k
+guided_5k_output: ./models/guided_5k
 
 # Training
 max_seq_length: 256
@@ -41,13 +52,13 @@ save_strategy: steps
 save_steps: 5
 save_total_limit: 2
 
-# Per stage
-stage1_cot_samples: 100
-stage2_targeted_samples: 100
-stage3_moe_samples: 100
-stage4_prune_samples: 100
-stage5_qat_samples: 100
-targeted_examples_per_gap: 20
+# Per stage (scaled for 5k/50k base: 500 each)
+stage1_cot_samples: 500
+stage2_targeted_samples: 500
+stage3_moe_samples: 500
+stage4_prune_samples: 500
+stage5_qat_samples: 500
+targeted_examples_per_gap: 50
 difficulty_levels: 3
 qat_max_epochs: 3
 pruning_target_sparsity: 0.2

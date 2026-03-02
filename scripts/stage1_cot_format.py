@@ -81,7 +81,7 @@ def cot_response(example: dict) -> str:
 
 def main():
     config = load_config()
-    train_100_path = PROJECT_ROOT / config["train_100"].replace("./", "")
+    train_base_path = PROJECT_ROOT / config["train_5000"].replace("./", "")
     cot_train_path = PROJECT_ROOT / config["cot_train"].replace("./", "")
     base_output = PROJECT_ROOT / config["base_output"].replace("./", "")
     cot_output = PROJECT_ROOT / config["cot_output"].replace("./", "")
@@ -93,7 +93,7 @@ def main():
         sys.exit(1)
 
     examples = []
-    with open(train_100_path, "r", encoding="utf-8") as f:
+    with open(train_base_path, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 examples.append(json.loads(line))

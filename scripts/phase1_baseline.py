@@ -1,7 +1,7 @@
 """
 LLM4 Phase 1: Clean baseline - no pretraining.
-Compare: random_100, random_1000, guided_100 (probe-guided 100).
-All three trained from scratch (random weights). Proves data-efficiency hypothesis.
+Compare: random_5k, random_50k, guided_5k (probe-guided 5k).
+All three trained from scratch (random weights). Scale controlled by config (phase1_base_size, phase1_large_size).
 """
 
 import json
@@ -16,8 +16,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-def build_guided_dataset(failures_path: Path, train_100_path: Path, output_path: Path, targeted_cap=60, total=100):
-    """Build guided_100: up to 60 targeted examples from failure types, fill to 100 with train_100."""
+def build_guided_dataset(failures_path: Path, train_pool_path: Path, output_path: Path, targeted_cap: int, total: int):
+    """Build guided set: up to targeted_cap from failure types, fill to total with train_pool."""
     with open(failures_path, "r", encoding="utf-8") as f:
         failures = [json.loads(line) for line in f if line.strip()]
     type_failures = {}
@@ -25,8 +25,8 @@ def build_guided_dataset(failures_path: Path, train_100_path: Path, output_path:
         t = r.get("type", "unknown")
         type_failures.setdefault(t, []).append(r)
 
-    with open(train_100_path, "r", encoding="utf-8") as f:
-        train_100 = [json.loads(line) for line in f if line.strip()]
+    with open(train_pool_path, "r", encoding="utf-8") as f:
+        train_pool = [json.loads(line) for line in f if line.strip()]
 
     rng = random.Random(43)
     from data.generate_arithmetic import GENERATORS
@@ -53,7 +53,7 @@ def build_guided_dataset(failures_path: Path, train_100_path: Path, output_path:
     targeted = targeted[:targeted_cap]
     need = total - len(targeted)
     if need > 0:
-        pool = [ex for ex in train_100 if ex not in targeted][:need]
+        pool = [ex for ex in train_pool if ex not in targeted][:need]
         rng.shuffle(pool)
         guided = targeted + pool
     else:
@@ -63,7 +63,7 @@ def build_guided_dataset(failures_path: Path, train_100_path: Path, output_path:
     with open(output_path, "w", encoding="utf-8") as f:
         for ex in guided:
             f.write(json.dumps(ex, ensure_ascii=False) + "\n")
-    print(f"Built guided dataset: {len(guided)} examples ({len(targeted)} targeted, {len(guided)-len(targeted)} from train_100)")
+    print(f"Built guided dataset: {len(guided)} examples ({len(targeted)} targeted, {len(guided)-len(targeted)} from pool)")
     return len(guided)
 
 
@@ -78,14 +78,17 @@ def main():
     output_dir = PROJECT_ROOT / config["output_dir"].replace("./", "")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    train_100 = data_dir / "train_100.jsonl"
-    train_1000_path = data_dir / "train_1000.jsonl"
-    test_200 = data_dir / "test_200.jsonl"
-    guided_100_path = data_dir / "guided_100.jsonl"
+    base_size = int(config.get("phase1_base_size", 5000))
+    large_size = int(config.get("phase1_large_size", 50000))
+    train_base_path = PROJECT_ROOT / config["train_5000"].replace("./", "")
+    train_large_path = PROJECT_ROOT / config["train_50000"].replace("./", "")
+    guided_path = data_dir / "guided_5k.jsonl"
     failures_path = data_dir / "probe_failures.jsonl"
+    targeted_cap = int(0.6 * base_size)
 
     print("=" * 60)
     print("LLM4 PHASE 1: CLEAN BASELINE (no pretraining)")
+    print(f"Scale: base={base_size}, large={large_size}")
     print("=" * 60)
 
     # 1. Generate datasets
@@ -96,76 +99,76 @@ def main():
         check=True,
     )
 
-    # 2. Train random_100 from scratch, evaluate
-    print("\n[2] Training random_100 (from scratch, 100 random examples)...")
+    # 2. Train random_5k from scratch, evaluate
+    print(f"\n[2] Training random_5k (from scratch, {base_size} random examples)...")
     subprocess.run([
         sys.executable,
         str(SCRIPT_DIR / "train_model.py"),
-        "--data", str(train_100),
-        "--output", str(PROJECT_ROOT / config["random_100_output"].replace("./", "")),
-        "--samples", "100",
+        "--data", str(train_base_path),
+        "--output", str(PROJECT_ROOT / config["random_5k_output"].replace("./", "")),
+        "--samples", str(base_size),
         "--from-scratch",
     ], cwd=PROJECT_ROOT, check=True)
 
-    print("Evaluating random_100 on 200 test problems...")
+    print(f"Evaluating random_5k on 200 test problems...")
     subprocess.run([
         sys.executable,
         str(SCRIPT_DIR / "evaluate_model_hf.py"),
-        "--model", config["random_100_output"],
-        "--output", str(output_dir / "random_100_scores.json"),
-        "--stage", "random_100",
+        "--model", config["random_5k_output"],
+        "--output", str(output_dir / "random_5k_scores.json"),
+        "--stage", "random_5k",
     ], cwd=PROJECT_ROOT, check=True)
 
-    # 3. Extract failures and build probe-guided dataset (60 targeted, 100 total)
-    with open(output_dir / "random_100_scores.json", "r", encoding="utf-8") as f:
+    # 3. Extract failures and build probe-guided dataset (targeted_cap targeted, base_size total)
+    with open(output_dir / "random_5k_scores.json", "r", encoding="utf-8") as f:
         data = json.load(f)
     failures = [r for r in data.get("results", []) if not r.get("correct", True)]
     failures_path.parent.mkdir(parents=True, exist_ok=True)
     with open(failures_path, "w", encoding="utf-8") as f:
         for r in failures:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    print(f"Saved {len(failures)} failures from random_100.")
+    print(f"Saved {len(failures)} failures from random_5k.")
 
-    build_guided_dataset(failures_path, train_100, guided_100_path, targeted_cap=60, total=100)
+    build_guided_dataset(failures_path, train_base_path, guided_path, targeted_cap=targeted_cap, total=base_size)
 
-    # 4. Train random_1000 from scratch, evaluate
-    print("\n[4] Training random_1000 (from scratch, 1000 random examples)...")
+    # 4. Train random_50k from scratch, evaluate
+    print(f"\n[4] Training random_50k (from scratch, {large_size} random examples)...")
     subprocess.run([
         sys.executable,
         str(SCRIPT_DIR / "train_model.py"),
-        "--data", str(train_1000_path),
-        "--output", str(PROJECT_ROOT / config["random_1000_output"].replace("./", "")),
-        "--samples", "1000",
+        "--data", str(train_large_path),
+        "--output", str(PROJECT_ROOT / config["random_50k_output"].replace("./", "")),
+        "--samples", str(large_size),
         "--from-scratch",
     ], cwd=PROJECT_ROOT, check=True)
 
-    print("Evaluating random_1000...")
+    print("Evaluating random_50k...")
     subprocess.run([
         sys.executable,
         str(SCRIPT_DIR / "evaluate_model_hf.py"),
-        "--model", config["random_1000_output"],
-        "--output", str(output_dir / "random_1000_scores.json"),
-        "--stage", "random_1000",
+        "--model", config["random_50k_output"],
+        "--output", str(output_dir / "random_50k_scores.json"),
+        "--stage", "random_50k",
     ], cwd=PROJECT_ROOT, check=True)
 
-    # 5. Train guided_100 from scratch, evaluate
-    print("\n[5] Training guided_100 (from scratch, 100 probe-guided examples)...")
+    # 5. Train guided_5k from scratch, evaluate
+    print(f"\n[5] Training guided_5k (from scratch, {base_size} probe-guided examples)...")
     subprocess.run([
         sys.executable,
         str(SCRIPT_DIR / "train_model.py"),
-        "--data", str(guided_100_path),
-        "--output", str(PROJECT_ROOT / config["guided_100_output"].replace("./", "")),
-        "--samples", "100",
+        "--data", str(guided_path),
+        "--output", str(PROJECT_ROOT / config["guided_5k_output"].replace("./", "")),
+        "--samples", str(base_size),
         "--from-scratch",
     ], cwd=PROJECT_ROOT, check=True)
 
-    print("Evaluating guided_100...")
+    print("Evaluating guided_5k...")
     subprocess.run([
         sys.executable,
         str(SCRIPT_DIR / "evaluate_model_hf.py"),
-        "--model", config["guided_100_output"],
-        "--output", str(output_dir / "guided_100_scores.json"),
-        "--stage", "guided_100",
+        "--model", config["guided_5k_output"],
+        "--output", str(output_dir / "guided_5k_scores.json"),
+        "--stage", "guided_5k",
     ], cwd=PROJECT_ROOT, check=True)
 
     # 6. Comparison report
@@ -175,21 +178,21 @@ def main():
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f).get("overall_accuracy", 0)
 
-    r100 = acc(output_dir / "random_100_scores.json")
-    r1000 = acc(output_dir / "random_1000_scores.json")
-    g100 = acc(output_dir / "guided_100_scores.json")
+    r5k = acc(output_dir / "random_5k_scores.json")
+    r50k = acc(output_dir / "random_50k_scores.json")
+    g5k = acc(output_dir / "guided_5k_scores.json")
 
     report = {
-        "random_100_accuracy": r100,
-        "random_1000_accuracy": r1000,
-        "guided_100_accuracy": g100,
+        "random_5k_accuracy": r5k,
+        "random_50k_accuracy": r50k,
+        "guided_5k_accuracy": g5k,
         "verdict": None,
         "hypothesis_proven": None,
     }
-    if r100 is not None and g100 is not None:
-        report["verdict"] = "Targeting helps." if g100 > r100 else "Targeting did not beat random 100."
-    if g100 is not None and r1000 is not None:
-        report["hypothesis_proven"] = g100 >= r1000
+    if r5k is not None and g5k is not None:
+        report["verdict"] = "Targeting helps." if g5k > r5k else "Targeting did not beat random 5k."
+    if g5k is not None and r50k is not None:
+        report["hypothesis_proven"] = g5k >= r50k
 
     with open(output_dir / "phase1_report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
@@ -198,14 +201,14 @@ def main():
     print("=" * 60)
     print("PHASE 1 COMPARISON REPORT")
     print("=" * 60)
-    print(f"  random_100:   {r100:.1f}%" if r100 is not None else "  random_100:   N/A")
-    print(f"  random_1000:  {r1000:.1f}%  (10x more data)" if r1000 is not None else "  random_1000:  N/A")
-    print(f"  guided_100:   {g100:.1f}%  (same data as random_100, targeted)" if g100 is not None else "  guided_100:   N/A")
+    print(f"  random_5k:   {r5k:.1f}%" if r5k is not None else "  random_5k:   N/A")
+    print(f"  random_50k:  {r50k:.1f}%  (10x more data)" if r50k is not None else "  random_50k:  N/A")
+    print(f"  guided_5k:   {g5k:.1f}%  (same size as random_5k, targeted)" if g5k is not None else "  guided_5k:   N/A")
     print("=" * 60)
     if report.get("verdict"):
         print(f"  VERDICT: {report['verdict']}")
     if report.get("hypothesis_proven") is not None:
-        print(f"  HYPOTHESIS (guided_100 >= random_1000): {'PROVEN' if report['hypothesis_proven'] else 'Not proven'}")
+        print(f"  HYPOTHESIS (guided_5k >= random_50k): {'PROVEN' if report['hypothesis_proven'] else 'Not proven'}")
     print("")
     print(f"Report saved to {output_dir / 'phase1_report.json'}")
 
