@@ -1,10 +1,12 @@
 """
 LLM4 - Evaluate HuggingFace model on test set.
 CoT-safe answer extraction: last number, or "answer is X", "= X", "result is X".
+Includes bootstrap confidence intervals (§3) and perplexity on answer tokens (§8).
 """
 
 import argparse
 import json
+import random
 import re
 import sys
 from pathlib import Path
@@ -18,6 +20,25 @@ def load_config():
     import yaml
     with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def bootstrap_accuracy(results, n_iterations, seed, ci_percentile=(2.5, 97.5)):
+    """Bootstrap accuracy and return mean, std, and percentile interval."""
+    rng = random.Random(seed)
+    n = len(results)
+    correct = [1 if r["correct"] else 0 for r in results]
+    accs = []
+    for _ in range(n_iterations):
+        idx = [rng.randint(0, n - 1) for _ in range(n)]
+        accs.append(100.0 * sum(correct[i] for i in idx) / n)
+    accs.sort()
+    low, high = ci_percentile
+    return {
+        "mean": sum(accs) / len(accs),
+        "std": (sum((x - sum(accs) / len(accs)) ** 2 for x in accs) / len(accs)) ** 0.5,
+        "ci_low": accs[int(len(accs) * low / 100)],
+        "ci_high": accs[int(len(accs) * high / 100)],
+    }
 
 
 def extract_answer_cot_safe(text: str):
@@ -49,6 +70,8 @@ def main():
     parser.add_argument("--output", required=True, help="Path to save results JSON")
     parser.add_argument("--stage", type=str, default="eval", help="Label for this run")
     parser.add_argument("--max-tokens", type=int, default=128, help="Max new tokens (CoT can be verbose)")
+    parser.add_argument("--no-bootstrap", action="store_true", help="Skip bootstrap confidence intervals")
+    parser.add_argument("--no-perplexity", action="store_true", help="Skip perplexity computation")
     args = parser.parse_args()
 
     config = load_config()
@@ -75,6 +98,19 @@ def main():
     if not model_path.exists():
         print(f"Model path not found: {args.model}")
         sys.exit(1)
+
+    # Ensure config.json has model_type so AutoModelForCausalLM.from_pretrained() can recognize the model
+    config_path = Path(model_path) / "config.json"
+    if config_path.exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg_dict = json.load(f)
+        if cfg_dict.get("model_type") is None:
+            base_model_name = config.get("base_model", "Qwen/Qwen2.5-0.5B-Instruct")
+            from transformers import AutoConfig
+            base_cfg = AutoConfig.from_pretrained(base_model_name, trust_remote_code=True)
+            cfg_dict["model_type"] = getattr(base_cfg, "model_type", "qwen2")
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(cfg_dict, f, indent=2)
 
     print(f"Loading model from {model_path}...")
     # Ensure config.json has model_type (required by AutoModel; sometimes missing after from-scratch save)
@@ -140,6 +176,48 @@ def main():
         if (i + 1) % 20 == 0 or (i + 1) == n_probs:
             print(f"  Evaluated {i+1}/{n_probs}", flush=True)
 
+    # Perplexity on answer tokens (§8): prompt + correct answer, loss on answer span only
+    perplexity_mean = None
+    if not args.no_perplexity and results:
+        import torch
+        print("Computing perplexity on answer tokens...", flush=True)
+        log_probs_list = []
+        for prob in problems:
+            instruction = prob["instruction"]
+            correct_answer = prob["correct_answer"]
+            full_prompt = prompt_template.format(instruction=instruction)
+            answer_text = str(correct_answer)
+            full_text = full_prompt + answer_text
+            enc = tokenizer(full_prompt, return_tensors="pt").to(model.device)
+            enc_full = tokenizer(
+                full_text,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512,
+            ).to(model.device)
+            prompt_len = enc["input_ids"].shape[1]
+            answer_len = enc_full["input_ids"].shape[1] - prompt_len
+            if answer_len <= 0:
+                continue
+            labels = enc_full["input_ids"].clone()
+            labels[0, :prompt_len] = -100
+            attn = enc_full.get("attention_mask")
+            if attn is not None:
+                labels[attn == 0] = -100
+            with torch.no_grad():
+                out = model(
+                    input_ids=enc_full["input_ids"],
+                    attention_mask=attn,
+                    labels=labels,
+                )
+            # loss is mean NLL over answer tokens
+            log_probs_list.append(out.loss.item())
+        if log_probs_list:
+            mean_neg_log_prob = sum(log_probs_list) / len(log_probs_list)
+            perplexity_mean = float(__import__("math").exp(mean_neg_log_prob))
+            print(f"  Mean perplexity (answer tokens): {perplexity_mean:.2f}")
+
     type_correct = {}
     type_total = {}
     for r in results:
@@ -165,13 +243,27 @@ def main():
         print(f"  {short} {correct}/{total} = {pct:.0f}%")
     print("-" * 60)
     print(f"  OVERALL{' ':22} {overall_c}/{overall_t} = {overall_pct:.1f}%")
+    if perplexity_mean is not None:
+        print(f"  Perplexity (answer tokens): {perplexity_mean:.2f}")
     print("=" * 60)
+
+    # Bootstrap confidence intervals (§3)
+    bootstrap_stats = None
+    if not args.no_bootstrap and results:
+        n_boot = config.get("bootstrap_iterations", 500)
+        ci = config.get("bootstrap_ci_percentile", [2.5, 97.5])
+        seed = config.get("seed", 42)
+        bootstrap_stats = bootstrap_accuracy(results, n_boot, seed, tuple(ci))
+        print(f"Bootstrap accuracy (n={n_boot}): {bootstrap_stats['mean']:.1f}% "
+              f"[{bootstrap_stats['ci_low']:.1f}%, {bootstrap_stats['ci_high']:.1f}%]")
 
     out_data = {
         "stage": args.stage,
         "overall_accuracy": overall_pct,
         "overall_correct": overall_c,
         "overall_total": overall_t,
+        "perplexity": perplexity_mean,
+        "bootstrap_accuracy": bootstrap_stats,
         "per_type": {t: {"correct": type_correct.get(t, 0), "total": type_total.get(t, 0)} for t in type_order},
         "gaps": gaps,
         "results": results,

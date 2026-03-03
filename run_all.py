@@ -3,11 +3,14 @@
 LLM4 - Single entry point: Phase 1 (baseline) then Phase 2 (stacking).
 Saves all scores to output/ as JSON. Prints final comparison report.
 Run on Kaggle P100 or locally. All paths relative.
+When local_test is false, Phase 1 runs with seeds 42, 43, 44 (required for main claim).
 """
 
 import subprocess
 import sys
 from pathlib import Path
+
+import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -29,9 +32,22 @@ def main():
     data = PROJECT_ROOT / "data"
     rag = PROJECT_ROOT / "rag"
 
+    with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    local_test = config.get("local_test", False)
+
     # Phase 1
-    run([sys.executable, str(PROJECT_ROOT / "data" / "generate_arithmetic.py")], "Generate datasets")
-    run([sys.executable, str(scripts / "phase1_baseline.py")], "Phase 1: Clean baseline (random_100, random_1000, guided_100)")
+    run([sys.executable, str(data / "generate_arithmetic.py")], "Generate datasets")
+
+    if local_test:
+        run([sys.executable, str(scripts / "phase1_baseline.py")], "Phase 1: Clean baseline (100 samples, single seed)")
+    else:
+        for seed in [42, 43, 44]:
+            run(
+                [sys.executable, str(scripts / "phase1_baseline.py"), "--seed", str(seed)],
+                f"Phase 1: Clean baseline (seed={seed})",
+            )
+        run([sys.executable, str(scripts / "aggregate_phase1_seeds.py")], "Phase 1: Aggregate seeds 42/43/44 (mean ± std)")
 
     # Phase 2: stacking (each stage loads previous)
     run([sys.executable, str(scripts / "stage0_train_base.py")], "Stage 0: Train base from scratch -> models/base")
