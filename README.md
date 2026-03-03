@@ -2,7 +2,7 @@
 
 Test whether **probe-guided examples** can match **brute-force random** when training a model with **no pretraining** (random weights). Same 0.5B architecture as Qwen2.5-0.5B-Instruct, zero pretrained knowledge. Default scale: **50k** base (guided vs random) / **100k** large (brute-force ceiling). A prior Kaggle run showed 5k gave ~3% accuracy (no signal); 50k gave ~62%, so Phase 1 uses 50k/100k (config: `phase1_base_size`, `phase1_large_size`).
 
-**Pull from GitHub to run on Kaggle:** clone this repo in a Kaggle notebook or script; all paths are relative. Use `local_test: false` in `config.yaml` for the full pipeline.
+**Pull from GitHub to run on Kaggle:** clone this repo in a Kaggle notebook or script; all paths are relative. Use `local_test: false` in `config.yaml` for the full pipeline. See **[RESULTS.md](RESULTS.md)** for a short summary of the local test trial and prior Kaggle run (no raw outputs).
 
 ---
 
