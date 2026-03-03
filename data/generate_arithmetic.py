@@ -114,6 +114,28 @@ def generate_problems(per_type: int, seed: int):
     return out
 
 
+def generate_balanced_problems(total: int, seed: int):
+    """Stratified sampling: equal (or nearly equal) count per problem type."""
+    rng = random.Random(seed)
+    n_types = len(PROBLEM_TYPES)
+    per_type = max(1, total // n_types)
+    remainder = total - per_type * n_types
+    out = []
+    for i, ptype in enumerate(PROBLEM_TYPES):
+        n = per_type + (1 if i < remainder else 0)
+        for _ in range(n):
+            instr, resp, operands, correct = GENERATORS[ptype](rng)
+            out.append({
+                "instruction": instr,
+                "response": resp,
+                "type": ptype,
+                "operands": operands,
+                "correct_answer": correct,
+            })
+    rng.shuffle(out)
+    return out
+
+
 def write_jsonl(path, items):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -179,9 +201,21 @@ def main():
     train_100 = generate_problems(10, 42)
     write_jsonl(script_dir / "train_100.jsonl", train_100)
     print(f"Generated train_100: {len(train_100)} problems")
+    balanced_100 = generate_balanced_problems(100, 43)
+    write_jsonl(script_dir / "balanced_train_100.jsonl", balanced_100)
+    print(f"Generated balanced_train_100: {len(balanced_100)} problems (stratified)")
     train_1000 = generate_problems(100, 42)
     write_jsonl(script_dir / "train_1000.jsonl", train_1000)
     print(f"Generated train_1000: {len(train_1000)} problems")
+    train_5000 = generate_problems(500, 42)
+    write_jsonl(script_dir / "train_5000.jsonl", train_5000)
+    print(f"Generated train_5000: {len(train_5000)} problems")
+    train_50000 = generate_problems(5000, 42)
+    write_jsonl(script_dir / "train_50000.jsonl", train_50000)
+    print(f"Generated train_50000: {len(train_50000)} problems")
+    train_100000 = generate_problems(10000, 42)
+    write_jsonl(script_dir / "train_100000.jsonl", train_100000)
+    print(f"Generated train_100000: {len(train_100000)} problems")
     test_200 = generate_problems(20, 99)
     write_jsonl(script_dir / "test_200.jsonl", test_200)
     print(f"Generated test_200: {len(test_200)} problems")

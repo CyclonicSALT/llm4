@@ -86,7 +86,10 @@ def main():
                 if line.strip():
                     ex = json.loads(line)
                     examples.append(f"### Instruction: {ex['instruction']}\n\n### Response: {ex['response']}")
-    examples = examples[: config.get("stage4_prune_samples", 100)]
+    prune_cap = config.get("stage4_prune_samples", 100)
+    if config.get("local_test", False):
+        prune_cap = min(prune_cap, config.get("local_phase1_base_size", 100))
+    examples = examples[: prune_cap]
     dataset = Dataset.from_dict({"text": examples})
 
     training_args = SFTConfig(

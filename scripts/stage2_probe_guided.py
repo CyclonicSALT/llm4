@@ -95,7 +95,10 @@ def main():
                     cot_examples.append(json.loads(line))
     combined = cot_examples + targeted
     rng.shuffle(combined)
-    combined = combined[: config.get("stage2_targeted_samples", 100)]
+    cap = config.get("stage2_targeted_samples", 100)
+    if config.get("local_test", False):
+        cap = min(cap, config.get("local_phase1_base_size", 100))
+    combined = combined[: cap]
     enhanced_train_path = Path(enhanced_train_path)
     enhanced_train_path.parent.mkdir(parents=True, exist_ok=True)
     with open(enhanced_train_path, "w", encoding="utf-8") as f:

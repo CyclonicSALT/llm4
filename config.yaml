@@ -1,17 +1,30 @@
 # LLM4 - Data efficiency experiment (no pretraining, stacking with load-from-prev)
 # All paths relative for Kaggle / Linux
 
+# Local test / smoke: true = run on CPU with small data. For smoke (full pipeline fast): base 10, large 20. For local dev: 100/500.
+local_test: true
+local_phase1_base_size: 10
+local_phase1_large_size: 20
+
 base_model: Qwen/Qwen2.5-0.5B-Instruct
 model_cache: ./models/base
 
 # Data paths
 train_100: ./data/train_100.jsonl
+balanced_train_100: ./data/balanced_train_100.jsonl
 train_1000: ./data/train_1000.jsonl
+train_5000: ./data/train_5000.jsonl
+train_50000: ./data/train_50000.jsonl
+train_100000: ./data/train_100000.jsonl
 test_200: ./data/test_200.jsonl
 cot_train: ./data/cot_train.jsonl
 enhanced_train: ./data/enhanced_train.jsonl
 failures_data: ./data/probe_failures.jsonl
 rag_documents: ./data/rag_documents/arithmetic_facts.jsonl
+
+# Stage 0 (when local_test uses train_100 + local_phase1_base_size samples)
+stage0_train_data: ./data/train_5000.jsonl
+stage0_samples: 5000
 
 # Model output paths (stacking: each stage loads previous)
 base_output: ./models/base
@@ -22,10 +35,13 @@ pruned_output: ./models/pruned
 final_output: ./models/final
 output_dir: ./output
 
-# Phase 1 specific
+# Phase 1 (local_test: base/large from config; full run: 50k/100k)
 random_100_output: ./models/random_100
+random_20_output: ./models/random_20
+random_500_output: ./models/random_500
 random_1000_output: ./models/random_1000
 guided_100_output: ./models/guided_100
+balanced_random_100_output: ./models/balanced_random_100
 
 # Training
 max_seq_length: 256

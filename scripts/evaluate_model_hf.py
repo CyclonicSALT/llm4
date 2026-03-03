@@ -77,6 +77,15 @@ def main():
         sys.exit(1)
 
     print(f"Loading model from {model_path}...")
+    # Ensure config.json has model_type (required by AutoModel; sometimes missing after from-scratch save)
+    config_path = model_path / "config.json"
+    if config_path.exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        if cfg.get("model_type") is None:
+            cfg["model_type"] = "qwen2"
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
     tokenizer = AutoTokenizer.from_pretrained(str(model_path), trust_remote_code=True)
     # ignore_mismatched_sizes=True allows loading when vocab/embedding was resized (e.g. from-scratch)
     model = AutoModelForCausalLM.from_pretrained(

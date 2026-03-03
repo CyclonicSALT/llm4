@@ -81,7 +81,8 @@ def cot_response(example: dict) -> str:
 
 def main():
     config = load_config()
-    train_100_path = PROJECT_ROOT / config["train_100"].replace("./", "")
+    local_test = config.get("local_test", False)
+    train_base_path = PROJECT_ROOT / (config["train_100"] if local_test else config.get("train_5000", config["train_100"])).replace("./", "")
     cot_train_path = PROJECT_ROOT / config["cot_train"].replace("./", "")
     base_output = PROJECT_ROOT / config["base_output"].replace("./", "")
     cot_output = PROJECT_ROOT / config["cot_output"].replace("./", "")
@@ -93,7 +94,7 @@ def main():
         sys.exit(1)
 
     examples = []
-    with open(train_100_path, "r", encoding="utf-8") as f:
+    with open(train_base_path, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 examples.append(json.loads(line))
@@ -112,12 +113,15 @@ def main():
             f.write(json.dumps(ex, ensure_ascii=False) + "\n")
     print(f"Saved {len(cot_examples)} CoT examples to {cot_train_path}")
 
+    n_cot = config.get("stage1_cot_samples", 100)
+    if local_test:
+        n_cot = min(n_cot, config.get("local_phase1_base_size", 100))
     subprocess.run([
         sys.executable,
         str(SCRIPT_DIR / "train_model.py"),
         "--data", str(cot_train_path),
         "--output", str(cot_output),
-        "--samples", str(config.get("stage1_cot_samples", 100)),
+        "--samples", str(n_cot),
         "--base", str(base_output),
     ], cwd=PROJECT_ROOT, check=True)
 

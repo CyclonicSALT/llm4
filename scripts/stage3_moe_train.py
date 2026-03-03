@@ -54,8 +54,11 @@ def main():
     probe_guided_path = PROJECT_ROOT / config["probe_guided_output"].replace("./", "")
     moe_output = PROJECT_ROOT / config["moe_output"].replace("./", "")
     enhanced_train_path = PROJECT_ROOT / config["enhanced_train"].replace("./", "")
-    train_1000_path = PROJECT_ROOT / config["train_1000"].replace("./", "")
+    local_test = config.get("local_test", False)
+    train_1000_path = PROJECT_ROOT / (config["train_100"] if local_test else config["train_1000"]).replace("./", "")
     samples_per_expert = config.get("stage3_moe_samples", 100)
+    if local_test:
+        samples_per_expert = min(samples_per_expert, max(1, config.get("local_phase1_base_size", 100) // 4))
 
     print("Stage 3: MoE - load probe_guided, train 4 experts -> models/moe/")
     if not (probe_guided_path / "config.json").exists():

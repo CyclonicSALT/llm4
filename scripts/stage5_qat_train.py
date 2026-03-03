@@ -30,6 +30,8 @@ def main():
     output_dir = PROJECT_ROOT / config["output_dir"].replace("./", "")
     qat_max_epochs = config.get("qat_max_epochs", 3)
     qat_samples = config.get("stage5_qat_samples", 100)
+    if config.get("local_test", False):
+        qat_samples = min(qat_samples, config.get("local_phase1_base_size", 100))
 
     print("Stage 5: QAT - load pruned, max 3 epochs -> models/final")
     if not (pruned_path / "config.json").exists():
