@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint if exists")
     parser.add_argument("--max-epochs", type=int, default=None, help="Override max epochs (e.g. QAT=3)")
     parser.add_argument("--no-lora", action="store_true", help="Full finetune (no LoRA); use for from-scratch small runs")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed (default: from config)")
     args = parser.parse_args()
 
     if not args.from_scratch and not args.base:
@@ -62,7 +63,26 @@ def main():
         examples = examples[: args.samples]
     print(f"Loaded {len(examples)} training examples")
 
-    texts = [format_example(ex["instruction"], ex["response"]) for ex in examples]
+    seed = args.seed if args.seed is not None else config.get("seed", 42)
+    val_ratio = config.get("val_split_ratio", 0.1)
+    val_seed = config.get("val_seed", 42)
+    n_val = max(0, int(len(examples) * val_ratio)) if val_ratio > 0 else 0
+    n_train = len(examples) - n_val
+    if n_val > 0:
+        import random
+        rng = random.Random(val_seed)
+        indices = list(range(len(examples)))
+        rng.shuffle(indices)
+        train_idx = set(indices[:n_train])
+        train_ex = [ex for i, ex in enumerate(examples) if i in train_idx]
+        val_ex = [ex for i, ex in enumerate(examples) if i not in train_idx]
+        print(f"Train/val split: {len(train_ex)} train, {len(val_ex)} val (seed={val_seed})")
+    else:
+        train_ex = examples
+        val_ex = []
+
+    texts_train = [format_example(ex["instruction"], ex["response"]) for ex in train_ex]
+    texts_val = [format_example(ex["instruction"], ex["response"]) for ex in val_ex] if val_ex else []
 
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model, TaskType
@@ -124,14 +144,25 @@ def main():
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
 
-    dataset = Dataset.from_dict({"text": texts})
+    train_dataset = Dataset.from_dict({"text": texts_train})
+    eval_dataset = Dataset.from_dict({"text": texts_val}) if texts_val else None
+
+    lr = config.get("learning_rate", 2e-4)
+    lr_scheduler = config.get("lr_scheduler_type", "linear")
+    warmup = config.get("warmup_ratio", 0.0)
+    if args.from_scratch:
+        lr = config.get("learning_rate_from_scratch", 2e-4)
+        lr_scheduler = config.get("lr_scheduler_from_scratch", "cosine")
+        warmup = config.get("warmup_ratio_from_scratch", 0.1)
 
     training_args = SFTConfig(
         output_dir=str(output_dir),
         per_device_train_batch_size=config.get("batch_size", 1),
         gradient_accumulation_steps=config.get("gradient_accumulation", 16),
         num_train_epochs=num_epochs,
-        learning_rate=config.get("learning_rate", 2e-4),
+        learning_rate=lr,
+        lr_scheduler_type=lr_scheduler,
+        warmup_ratio=warmup,
         save_strategy=config.get("save_strategy", "steps"),
         save_steps=config.get("save_steps", 5),
         save_total_limit=config.get("save_total_limit", 2),
@@ -143,12 +174,18 @@ def main():
         dataset_text_field="text",
         max_length=max_seq,
         packing=False,
+        seed=seed,
+        evaluation_strategy="epoch" if eval_dataset else "no",
+        load_best_model_at_end=bool(eval_dataset and config.get("load_best_model_at_end", True)),
+        metric_for_best_model=config.get("metric_for_best_model", "eval_loss"),
+        greater_is_better=False,
     )
 
     trainer = SFTTrainer(
         model=model,
         args=training_args,
-        train_dataset=dataset,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         callbacks=[ProgressCallback()],
     )
 

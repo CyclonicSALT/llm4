@@ -1,11 +1,15 @@
 # LLM4 - Data efficiency experiment (no pretraining, stacking with load-from-prev)
 # All paths relative for Kaggle / Linux
 
+# Local test mode: 100 samples, CPU only. Set to true to run fast local test before Kaggle.
+local_test: true
+
 base_model: Qwen/Qwen2.5-0.5B-Instruct
 model_cache: ./models/base
 
 # Data paths
 train_100: ./data/train_100.jsonl
+balanced_train_100: ./data/balanced_train_100.jsonl
 train_1000: ./data/train_1000.jsonl
 train_5000: ./data/train_5000.jsonl
 train_50000: ./data/train_50000.jsonl
@@ -15,7 +19,7 @@ enhanced_train: ./data/enhanced_train.jsonl
 failures_data: ./data/probe_failures.jsonl
 rag_documents: ./data/rag_documents/arithmetic_facts.jsonl
 
-# Stage 0 base training (scaled: use train_5000)
+# Stage 0 base training (overridden when local_test: true -> train_100, 100 samples)
 stage0_train_data: ./data/train_5000.jsonl
 stage0_samples: 5000
 
@@ -28,7 +32,7 @@ pruned_output: ./models/pruned
 final_output: ./models/final
 output_dir: ./output
 
-# Phase 1 specific (small scale: 100/1000; large scale: 5000/50000)
+# Phase 1 specific (overridden when local_test: true -> 100 for base, skip or 100 for large)
 phase1_base_size: 5000
 phase1_large_size: 50000
 random_100_output: ./models/random_100
@@ -37,6 +41,8 @@ guided_100_output: ./models/guided_100
 random_5k_output: ./models/random_5k
 random_50k_output: ./models/random_50k
 guided_5k_output: ./models/guided_5k
+balanced_random_100_output: ./models/balanced_random_100
+balanced_random_5k_output: ./models/balanced_random_5k
 
 # Training
 max_seq_length: 256
@@ -44,6 +50,11 @@ batch_size: 1
 gradient_accumulation: 16
 epochs: 1
 learning_rate: 2.0e-4
+learning_rate_from_scratch: 2.0e-4
+lr_scheduler_type: linear
+lr_scheduler_from_scratch: cosine
+warmup_ratio: 0.0
+warmup_ratio_from_scratch: 0.1
 lora_r: 8
 lora_alpha: 16
 use_cpu: true
@@ -51,6 +62,18 @@ dtype: float32
 save_strategy: steps
 save_steps: 5
 save_total_limit: 2
+
+# Validation (proposal §1)
+val_split_ratio: 0.1
+val_seed: 42
+evaluation_strategy: epoch
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+
+# Reproducibility and statistics
+seed: 42
+bootstrap_iterations: 500
+bootstrap_ci_percentile: [2.5, 97.5]
 
 # Per stage (scaled for 5k/50k base: 500 each)
 stage1_cot_samples: 500

@@ -28,9 +28,25 @@ def main():
     config = load_config()
     output_dir = PROJECT_ROOT / config["output_dir"].replace("./", "")
 
+    # Phase 1 (single-seed scores in output/, or multi-seed summary in phase1_multi_seed_report.json)
+    multi_seed_path = output_dir / "phase1_multi_seed_report.json"
+    if multi_seed_path.exists():
+        with open(multi_seed_path, "r", encoding="utf-8") as f:
+            multi = json.load(f)
+        print("")
+        print("Phase 1 (multi-seed mean ± std):")
+        for key, v in multi.items():
+            if not isinstance(v, dict) or "mean" not in v or "std" not in v:
+                continue
+            label = key.replace("_accuracy", "").replace("_", " ")
+            print(f"  {label}: {v['mean']:.1f}% ± {v['std']:.1f}%")
+        if multi.get("missing_seeds"):
+            print("  (WARNING: incomplete seeds: {})".format(multi["missing_seeds"]))
+
     # Phase 1
     phase1 = [
         ("random_100", "random_100_scores.json", 100),
+        ("balanced_random_100", "balanced_random_100_scores.json", 100),
         ("random_1000", "random_1000_scores.json", 1000),
         ("guided_100", "guided_100_scores.json", 100),
     ]
@@ -50,15 +66,27 @@ def main():
         path = output_dir / filename
         data = load_scores(path)
         acc = data.get("overall_accuracy", 0) if data else None
-        acc_str = f"{acc:.1f}%" if acc is not None else "N/A"
-        rows.append(("phase1", label, examples, acc_str))
+        boot = data.get("bootstrap_accuracy") if data else None
+        if acc is not None and boot:
+            acc_str = f"{acc:.1f}% [{boot.get('ci_low', 0):.1f}-{boot.get('ci_high', 0):.1f}%]"
+        else:
+            acc_str = f"{acc:.1f}%" if acc is not None else "N/A"
+        ppl = data.get("perplexity") if data else None
+        extra = f" ppl={ppl:.1f}" if ppl is not None else ""
+        rows.append(("phase1", label, examples, acc_str + extra))
 
     for label, filename, examples in stages:
         path = output_dir / filename
         data = load_scores(path)
         acc = data.get("overall_accuracy", 0) if data else None
-        acc_str = f"{acc:.1f}%" if acc is not None else "N/A"
-        rows.append(("phase2", label, examples, acc_str))
+        boot = data.get("bootstrap_accuracy") if data else None
+        if acc is not None and boot:
+            acc_str = f"{acc:.1f}% [{boot.get('ci_low', 0):.1f}-{boot.get('ci_high', 0):.1f}%]"
+        else:
+            acc_str = f"{acc:.1f}%" if acc is not None else "N/A"
+        ppl = data.get("perplexity") if data else None
+        extra = f" ppl={ppl:.1f}" if ppl is not None else ""
+        rows.append(("phase2", label, examples, acc_str + extra))
 
     print("")
     print("=" * 70)

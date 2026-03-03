@@ -12,7 +12,19 @@ Test whether **probe-guided examples** can match **10× random data** when train
 
 ## Quick run
 
-**Single script (Phase 1 + Phase 2):**
+**Local test first (100 samples, CPU, with bootstrap CIs and perplexity):**
+
+Set `local_test: true` in `config.yaml` (default for local dev), then:
+
+```bash
+python run_local.py
+```
+
+This runs: data generation → Phase 1 (random_100, balanced_random_100, guided_100) → Stage 0 (base on 100) → comparison report. All evals include bootstrap confidence intervals and perplexity.
+
+**Full pipeline (e.g. Kaggle GPU):**
+
+Set `local_test: false` in `config.yaml`, then:
 
 ```bash
 python run_all.py

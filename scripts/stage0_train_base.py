@@ -21,8 +21,13 @@ def load_config():
 
 def main():
     config = load_config()
-    train_data = PROJECT_ROOT / config.get("stage0_train_data", config["train_5000"]).replace("./", "")
-    samples = str(config.get("stage0_samples", 5000))
+    local_test = config.get("local_test", False)
+    if local_test:
+        train_data = PROJECT_ROOT / config["train_100"].replace("./", "")
+        samples = "100"
+    else:
+        train_data = PROJECT_ROOT / config.get("stage0_train_data", config["train_5000"]).replace("./", "")
+        samples = str(config.get("stage0_samples", 5000))
     base_output = PROJECT_ROOT / config["base_output"].replace("./", "")
     output_dir = PROJECT_ROOT / config["output_dir"].replace("./", "")
 
