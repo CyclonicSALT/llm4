@@ -1,6 +1,6 @@
 # LLM4 – Data efficiency from scratch (no pretraining)
 
-Test whether **probe-guided examples** can match **10× random data** when training a model with **no pretraining** (random weights). Same 0.5B architecture as Qwen2.5-0.5B-Instruct, zero pretrained knowledge. Default scale: **5k** base / **50k** large (config: `phase1_base_size`, `phase1_large_size`).
+Test whether **probe-guided examples** can match **brute-force random** when training a model with **no pretraining** (random weights). Same 0.5B architecture as Qwen2.5-0.5B-Instruct, zero pretrained knowledge. Default scale: **50k** base (guided vs random) / **100k** large (brute-force ceiling). A prior Kaggle run showed 5k gave ~3% accuracy (no signal); 50k gave ~62%, so Phase 1 uses 50k/100k (config: `phase1_base_size`, `phase1_large_size`).
 
 **Pull from GitHub to run on Kaggle:** clone this repo in a Kaggle notebook or script; all paths are relative. Use `local_test: false` in `config.yaml` for the full pipeline.
 
@@ -18,15 +18,15 @@ Test whether **probe-guided examples** can match **10× random data** when train
 
 ## Quick run
 
-### Local test first (100 samples, CPU)
+### Local test first (100 base + 500 brute-force, CPU)
 
-Set `local_test: true` in `config.yaml` (default for local dev), then:
+Set `local_test: true` in `config.yaml` (default for local dev). Optionally set `local_phase1_base_size: 100` and `local_phase1_large_size: 500` to verify the pipeline on small data. Then:
 
 ```bash
 python run_local.py
 ```
 
-Runs: data generation → Phase 1 (random_100, balanced_random_100, guided_100) → Stage 0 (base on 100) → comparison report. All evals include **bootstrap confidence intervals** and **perplexity** on answer tokens.
+Runs: data generation → Phase 1 (random_100, balanced_random_100, guided_100, then **random_500** as brute-force) → Stage 0 (base on 100) → comparison report. All evals include **bootstrap confidence intervals** and **perplexity**. When satisfied, set `local_test: false` and use 50k/100k on Kaggle.
 
 ### Full pipeline (e.g. Kaggle GPU)
 
@@ -49,16 +49,16 @@ All paths are relative. Outputs go to `output/` as JSON.
 
 ---
 
-## Phase 1: Clean baseline (5k / 50k or 100 in local test)
+## Phase 1: Clean baseline (50k / 100k full run, or 100 in local test)
 
-1. Generate datasets: `train_5000.jsonl`, `train_50000.jsonl`, `test_200.jsonl`, `balanced_train_5k.jsonl` (stratified), `arithmetic_facts.jsonl` (and `train_100` / `balanced_train_100` when `local_test: true`).
-2. Train **random** from scratch (5k or 100 examples) → evaluate.
-3. Use failures to build **guided** set (60% targeted) → train **guided** from scratch → evaluate.
-4. Train **balanced random** from scratch (stratified by problem type) → evaluate.
-5. Train **random_50k** from scratch (full run only) → evaluate.
+1. Generate datasets: `train_50000.jsonl`, `train_100000.jsonl`, `test_200.jsonl`, `balanced_train_50k.jsonl` (stratified), `arithmetic_facts.jsonl` (and `train_100` / `balanced_train_100` when `local_test: true`).
+2. Train **random_50k** from scratch (50k or 100 examples in local test) → evaluate.
+3. Use failures to build **guided** set (60% targeted) → train **guided_50k** from scratch → evaluate.
+4. Train **balanced_random_50k** from scratch (stratified) → evaluate.
+5. Train **random_100k** from scratch (full run only) → evaluate.
 6. **Multi-seed (full run):** Phase 1 is run with seeds 42, 43, 44; `scripts/aggregate_phase1_seeds.py` reports mean ± std. Missing or failed seeds (e.g. OOM) are warned; aggregation uses only completed runs.
 
-**Verdicts:** `guided > random` → targeting helps; `guided > balanced random` → stronger claim; `guided >= random_50k` → data-efficiency hypothesis supported.
+**Verdicts:** `guided_50k > random_50k` → targeting helps; `guided_50k > balanced_random_50k` → stronger claim; `guided_50k >= random_100k` → data-efficiency hypothesis supported.
 
 ---
 
@@ -68,7 +68,7 @@ Each stage **loads the previous stage**; no full retrain from scratch.
 
 | Stage | Input | Action | Output |
 |-------|--------|--------|--------|
-| 0 | — | Train from scratch (5k or 100 examples) | `models/base` |
+| 0 | — | Train from scratch (5k or 100 examples; Stage 0 unchanged) | `models/base` |
 | 1 | base | CoT training (500 samples) | `models/cot` |
 | 2 | cot | Probe-guided targeted (500) | `models/probe_guided` |
 | 3 | probe_guided | 4 LoRA experts (500/expert) | `models/moe/` |
@@ -92,7 +92,7 @@ RAG index: run `python rag/build_index.py` (uses `data/rag_documents/arithmetic_
 
 - **Phase 1**: `guided` accuracy > `random` → targeting helps; with multi-seed, report mean ± std.
 - **Phase 2**: Final stacked model accuracy > `guided` baseline.
-- **Main result**: If `guided` is close to `random_50k` on an untrained model, the data-efficiency hypothesis is supported.
+- **Main result**: If `guided_50k` is close to `random_100k` on an untrained model, the data-efficiency hypothesis is supported.
 
 ---
 

@@ -43,10 +43,11 @@ def main():
         if multi.get("missing_seeds"):
             print("  (WARNING: incomplete seeds: {})".format(multi["missing_seeds"]))
 
-    # Phase 1
+    # Phase 1 (local test: 100/500; full run: 50k/100k in output/seed_* or phase1_multi_seed_report)
     phase1 = [
         ("random_100", "random_100_scores.json", 100),
         ("balanced_random_100", "balanced_random_100_scores.json", 100),
+        ("random_500", "random_500_scores.json", 500),
         ("random_1000", "random_1000_scores.json", 1000),
         ("guided_100", "guided_100_scores.json", 100),
     ]

@@ -1,8 +1,11 @@
 # LLM4 - Data efficiency experiment (no pretraining, stacking with load-from-prev)
 # All paths relative for Kaggle / Linux
 
-# Local test mode: 100 samples, CPU only. Set to true to run fast local test before Kaggle.
+# Local test mode: run on CPU with small data. Set to true to test locally before Kaggle.
+# When true, Phase 1 uses local_phase1_base_size (100) and local_phase1_large_size (500) so you can verify the pipeline; revert to 50k/100k for Kaggle.
 local_test: true
+local_phase1_base_size: 100
+local_phase1_large_size: 500
 
 base_model: Qwen/Qwen2.5-0.5B-Instruct
 model_cache: ./models/base
@@ -13,6 +16,7 @@ balanced_train_100: ./data/balanced_train_100.jsonl
 train_1000: ./data/train_1000.jsonl
 train_5000: ./data/train_5000.jsonl
 train_50000: ./data/train_50000.jsonl
+train_100000: ./data/train_100000.jsonl
 test_200: ./data/test_200.jsonl
 cot_train: ./data/cot_train.jsonl
 enhanced_train: ./data/enhanced_train.jsonl
@@ -32,17 +36,18 @@ pruned_output: ./models/pruned
 final_output: ./models/final
 output_dir: ./output
 
-# Phase 1 specific (overridden when local_test: true -> 100 for base, skip or 100 for large)
-phase1_base_size: 5000
-phase1_large_size: 50000
+# Phase 1: base = guided/small comparison (50k); large = brute-force ceiling (100k). Kaggle run showed 5k gave ~3% (no signal); 50k gave 62%.
+phase1_base_size: 50000
+phase1_large_size: 100000
 random_100_output: ./models/random_100
+random_500_output: ./models/random_500
 random_1000_output: ./models/random_1000
 guided_100_output: ./models/guided_100
-random_5k_output: ./models/random_5k
 random_50k_output: ./models/random_50k
-guided_5k_output: ./models/guided_5k
+random_100k_output: ./models/random_100k
+guided_50k_output: ./models/guided_50k
 balanced_random_100_output: ./models/balanced_random_100
-balanced_random_5k_output: ./models/balanced_random_5k
+balanced_random_50k_output: ./models/balanced_random_50k
 
 # Training
 max_seq_length: 256

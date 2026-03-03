@@ -155,6 +155,9 @@ def main():
         lr_scheduler = config.get("lr_scheduler_from_scratch", "cosine")
         warmup = config.get("warmup_ratio_from_scratch", 0.1)
 
+    # When using validation, save_strategy must match eval_strategy for load_best_model_at_end
+    use_eval = eval_dataset is not None
+    save_strategy = "epoch" if use_eval else config.get("save_strategy", "steps")
     training_args = SFTConfig(
         output_dir=str(output_dir),
         per_device_train_batch_size=config.get("batch_size", 1),
@@ -163,7 +166,7 @@ def main():
         learning_rate=lr,
         lr_scheduler_type=lr_scheduler,
         warmup_ratio=warmup,
-        save_strategy=config.get("save_strategy", "steps"),
+        save_strategy=save_strategy,
         save_steps=config.get("save_steps", 5),
         save_total_limit=config.get("save_total_limit", 2),
         logging_steps=1,
@@ -175,8 +178,8 @@ def main():
         max_length=max_seq,
         packing=False,
         seed=seed,
-        evaluation_strategy="epoch" if eval_dataset else "no",
-        load_best_model_at_end=bool(eval_dataset and config.get("load_best_model_at_end", True)),
+        eval_strategy="epoch" if use_eval else "no",
+        load_best_model_at_end=bool(use_eval and config.get("load_best_model_at_end", True)),
         metric_for_best_model=config.get("metric_for_best_model", "eval_loss"),
         greater_is_better=False,
     )

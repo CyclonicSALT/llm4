@@ -92,8 +92,8 @@ def main():
 
     local_test = config.get("local_test", False)
     if local_test:
-        base_size = 100
-        large_size = 100
+        base_size = int(config.get("local_phase1_base_size", 100))
+        large_size = int(config.get("local_phase1_large_size", 500))
         train_base_path = PROJECT_ROOT / config["train_100"].replace("./", "")
         train_large_path = PROJECT_ROOT / config["train_1000"].replace("./", "")
         balanced_path = PROJECT_ROOT / config.get("balanced_train_100", "data/balanced_train_100.jsonl").replace("./", "")
@@ -103,22 +103,22 @@ def main():
         guided_output = config["guided_100_output"].replace("./", "")
         scores_random = "random_100_scores.json"
         scores_balanced = "balanced_random_100_scores.json"
-        scores_large = "random_1000_scores.json"
+        scores_large = "random_500_scores.json" if large_size == 500 else "random_1000_scores.json"
         scores_guided = "guided_100_scores.json"
     else:
-        base_size = int(config.get("phase1_base_size", 5000))
-        large_size = int(config.get("phase1_large_size", 50000))
-        train_base_path = PROJECT_ROOT / config["train_5000"].replace("./", "")
-        train_large_path = PROJECT_ROOT / config["train_50000"].replace("./", "")
-        balanced_path = data_dir / "balanced_train_5k.jsonl"  # generated below
-        guided_path = data_dir / "guided_5k.jsonl"
-        random_output = config["random_5k_output"].replace("./", "")
-        balanced_output = config.get("balanced_random_5k_output", "./models/balanced_random_5k").replace("./", "")
-        guided_output = config["guided_5k_output"].replace("./", "")
-        scores_random = "random_5k_scores.json"
-        scores_balanced = "balanced_random_5k_scores.json"
-        scores_large = "random_50k_scores.json"
-        scores_guided = "guided_5k_scores.json"
+        base_size = int(config.get("phase1_base_size", 50000))
+        large_size = int(config.get("phase1_large_size", 100000))
+        train_base_path = PROJECT_ROOT / config["train_50000"].replace("./", "")
+        train_large_path = PROJECT_ROOT / config["train_100000"].replace("./", "")
+        balanced_path = data_dir / "balanced_train_50k.jsonl"  # generated below
+        guided_path = data_dir / "guided_50k.jsonl"
+        random_output = config["random_50k_output"].replace("./", "")
+        balanced_output = config.get("balanced_random_50k_output", "./models/balanced_random_50k").replace("./", "")
+        guided_output = config["guided_50k_output"].replace("./", "")
+        scores_random = "random_50k_scores.json"
+        scores_balanced = "balanced_random_50k_scores.json"
+        scores_large = "random_100k_scores.json"
+        scores_guided = "guided_50k_scores.json"
 
     if run_seed is not None:
         def _seed_path(s):
@@ -138,7 +138,7 @@ def main():
     if run_seed is not None:
         print(f"Multi-seed run: seed={run_seed}")
     if local_test:
-        print("LOCAL TEST MODE: 100 samples, CPU")
+        print("LOCAL TEST MODE: base={}, large={} (CPU)".format(base_size, large_size))
     print(f"Scale: base={base_size}, large={large_size}")
     print("=" * 60)
 
@@ -152,9 +152,9 @@ def main():
 
     if not local_test:
         from data.generate_arithmetic import generate_balanced_problems, write_jsonl
-        balanced_5k = generate_balanced_problems(5000, 44)
-        write_jsonl(data_dir / "balanced_train_5k.jsonl", balanced_5k)
-        balanced_path = data_dir / "balanced_train_5k.jsonl"
+        balanced_50k = generate_balanced_problems(base_size, 44)
+        write_jsonl(data_dir / "balanced_train_50k.jsonl", balanced_50k)
+        balanced_path = data_dir / "balanced_train_50k.jsonl"
 
     # 2. Train random (unstratified) from scratch, evaluate
     print(f"\n[2] Training random (from scratch, {base_size} examples)...")
@@ -174,7 +174,7 @@ def main():
         str(SCRIPT_DIR / "evaluate_model_hf.py"),
         "--model", random_output,
         "--output", str(score_dir / scores_random),
-        "--stage", ("random_100" if local_test else "random_5k"),
+        "--stage", ("random_100" if local_test else "random_50k"),
     ], cwd=PROJECT_ROOT, check=True)
 
     # 3. Extract failures and build probe-guided dataset
@@ -207,37 +207,18 @@ def main():
             str(SCRIPT_DIR / "evaluate_model_hf.py"),
             "--model", balanced_output,
             "--output", str(score_dir / scores_balanced),
-            "--stage", ("balanced_random_100" if local_test else "balanced_random_5k"),
+            "--stage", ("balanced_random_100" if local_test else "balanced_random_50k"),
         ], cwd=PROJECT_ROOT, check=True)
 
-    # 5. Train large random (local_test: large_size==base_size so we skip; full run: train random_50k)
+    # 5. Train large random (local_test: 500 from train_1000; full run: random_100k)
     if local_test and large_size > base_size:
-        print(f"\n[5] Training random_1000 (from scratch, {large_size} examples)...")
+        large_output = config.get("random_500_output", config["random_1000_output"]).replace("./", "") if large_size == 500 else config["random_1000_output"].replace("./", "")
+        print(f"\n[5] Training random_{large_size} (from scratch, {large_size} examples)...")
         subprocess.run([
             sys.executable,
             str(SCRIPT_DIR / "train_model.py"),
             "--data", str(train_large_path),
-            "--output", str(PROJECT_ROOT / config["random_1000_output"].replace("./", "")),
-            "--samples", str(large_size),
-            "--from-scratch",
-        ], cwd=PROJECT_ROOT, check=True)
-        subprocess.run([
-            sys.executable,
-            str(SCRIPT_DIR / "evaluate_model_hf.py"),
-            "--model", config["random_1000_output"],
-            "--output", str(score_dir / scores_large),
-            "--stage", "random_1000",
-        ], cwd=PROJECT_ROOT, check=True)
-    elif not local_test:
-        print(f"\n[5] Training random_50k (from scratch, {large_size} examples)...")
-        rand_50k_out = config["random_50k_output"].replace("./", "")
-        if run_seed is not None:
-            rand_50k_out = str(Path(rand_50k_out).parent / (Path(rand_50k_out).name + f"_seed{run_seed}")).replace("\\", "/")
-        subprocess.run([
-            sys.executable,
-            str(SCRIPT_DIR / "train_model.py"),
-            "--data", str(train_large_path),
-            "--output", str(PROJECT_ROOT / rand_50k_out),
+            "--output", str(PROJECT_ROOT / large_output),
             "--samples", str(large_size),
             "--from-scratch",
             "--seed", str(train_seed),
@@ -245,9 +226,30 @@ def main():
         subprocess.run([
             sys.executable,
             str(SCRIPT_DIR / "evaluate_model_hf.py"),
-            "--model", rand_50k_out,
+            "--model", large_output,
             "--output", str(score_dir / scores_large),
-            "--stage", "random_50k",
+            "--stage", "random_{}".format(large_size),
+        ], cwd=PROJECT_ROOT, check=True)
+    elif not local_test:
+        print(f"\n[5] Training random_100k (from scratch, {large_size} examples)...")
+        rand_100k_out = config["random_100k_output"].replace("./", "")
+        if run_seed is not None:
+            rand_100k_out = str(Path(rand_100k_out).parent / (Path(rand_100k_out).name + f"_seed{run_seed}")).replace("\\", "/")
+        subprocess.run([
+            sys.executable,
+            str(SCRIPT_DIR / "train_model.py"),
+            "--data", str(train_large_path),
+            "--output", str(PROJECT_ROOT / rand_100k_out),
+            "--samples", str(large_size),
+            "--from-scratch",
+            "--seed", str(train_seed),
+        ], cwd=PROJECT_ROOT, check=True)
+        subprocess.run([
+            sys.executable,
+            str(SCRIPT_DIR / "evaluate_model_hf.py"),
+            "--model", rand_100k_out,
+            "--output", str(score_dir / scores_large),
+            "--stage", "random_100k",
         ], cwd=PROJECT_ROOT, check=True)
 
     # 6. Train guided from scratch, evaluate
@@ -268,7 +270,7 @@ def main():
         str(SCRIPT_DIR / "evaluate_model_hf.py"),
         "--model", guided_output,
         "--output", str(score_dir / scores_guided),
-        "--stage", ("guided_100" if local_test else "guided_5k"),
+        "--stage", ("guided_100" if local_test else "guided_50k"),
     ], cwd=PROJECT_ROOT, check=True)
 
     # 7. Comparison report (for this seed)
