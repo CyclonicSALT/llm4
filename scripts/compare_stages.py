@@ -10,11 +10,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-
-def load_config():
-    with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
-        import yaml
-        return yaml.safe_load(f)
+from config_utils import load_config
 
 
 def load_scores(path: Path):
@@ -28,32 +24,26 @@ def main():
     config = load_config()
     output_dir = PROJECT_ROOT / config["output_dir"].replace("./", "")
 
-    # Phase 1 (local_test: base/large from config; else fixed 100/1000)
+    # Phase 1: base/large from config (no fixed sizes)
     local_test = config.get("local_test", False)
     base_size = int(config.get("local_phase1_base_size", 100))
     large_size = int(config.get("local_phase1_large_size", 500))
-    if local_test:
-        phase1 = [
-            (f"random_{base_size}", f"random_{base_size}_scores.json", base_size),
-            (f"balanced_random_{base_size}", f"balanced_random_{base_size}_scores.json", base_size),
-            (f"random_{large_size}", f"random_{large_size}_scores.json", large_size),
-            (f"guided_{base_size}", f"guided_{base_size}_scores.json", base_size),
-        ]
-    else:
-        phase1 = [
-            ("random_100", "random_100_scores.json", 100),
-            ("random_1000", "random_1000_scores.json", 1000),
-            ("guided_100", "guided_100_scores.json", 100),
-        ]
-    # Phase 2 stacking
+    phase1 = [
+        (f"random_{base_size}", f"random_{base_size}_scores.json", base_size),
+        (f"balanced_random_{base_size}", f"balanced_random_{base_size}_scores.json", base_size),
+        (f"random_{large_size}", f"random_{large_size}_scores.json", large_size),
+        (f"guided_{base_size}", f"guided_{base_size}_scores.json", base_size),
+    ]
+    # Phase 2 stacking (incl. RAG on/off ablation)
     stages = [
-        ("stage0_base", "stage0_base_scores.json", base_size if local_test else 100),
-        ("stage1_cot", "stage1_cot_scores.json", base_size if local_test else 100),
-        ("stage2_probe_guided", "stage2_probe_guided_scores.json", base_size if local_test else 100),
-        ("stage3_moe", "stage3_moe_scores.json", base_size if local_test else 100),
-        ("stage4_pruned", "stage4_pruned_scores.json", base_size if local_test else 100),
-        ("stage5_qat", "stage5_qat_scores.json", base_size if local_test else 100),
-        ("stage6_rag", "stage6_rag_scores.json", base_size if local_test else 100),
+        ("stage0_base", "stage0_base_scores.json", base_size),
+        ("stage1_cot", "stage1_cot_scores.json", base_size),
+        ("stage2_probe_guided", "stage2_probe_guided_scores.json", base_size),
+        ("stage3_moe", "stage3_moe_scores.json", base_size),
+        ("stage4_pruned", "stage4_pruned_scores.json", base_size),
+        ("stage5_qat", "stage5_qat_scores.json", base_size),
+        ("stage6_no_rag", "stage6_no_rag_scores.json", base_size),
+        ("stage6_rag", "stage6_rag_scores.json", base_size),
     ]
 
     rows = []
@@ -90,9 +80,9 @@ def main():
     print("=" * 70)
 
     # Verdicts (dynamic base/large when local_test)
-    guided_scores = output_dir / (f"guided_{base_size}_scores.json" if local_test else "guided_100_scores.json")
-    random_scores = output_dir / (f"random_{base_size}_scores.json" if local_test else "random_100_scores.json")
-    random_large_scores = output_dir / (f"random_{large_size}_scores.json" if local_test else "random_1000_scores.json")
+    guided_scores = output_dir / f"guided_{base_size}_scores.json"
+    random_scores = output_dir / f"random_{base_size}_scores.json"
+    random_large_scores = output_dir / f"random_{large_size}_scores.json"
     g = load_scores(guided_scores)
     r = load_scores(random_scores)
     r_large = load_scores(random_large_scores)

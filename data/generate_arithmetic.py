@@ -1,11 +1,17 @@
 """
-LLM4 - Generate all arithmetic datasets (same as LLM3).
-Pure Python, no external downloads. Reproducible via seeds.
+LLM4 - Generate arithmetic datasets from config sizes.
+Reads phase1_base_size and phase1_large_size from config.yaml; generates
+train_phase1_base.jsonl, train_phase1_large.jsonl, balanced_train_phase1_base.jsonl,
+test_200.jsonl, and RAG facts. No fixed training sizes — data matches your chosen sizes.
 """
 
 import json
 import random
+import sys
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 PROBLEM_TYPES = [
     "single_digit_addition",
@@ -115,11 +121,18 @@ def generate_problems(per_type: int, seed: int):
 
 
 def generate_balanced_problems(total: int, seed: int):
-    """Stratified sampling: equal (or nearly equal) count per problem type."""
+    """Stratified sampling: equal (or nearly equal) count per problem type. Returns exactly `total` items."""
     rng = random.Random(seed)
     n_types = len(PROBLEM_TYPES)
-    per_type = max(1, total // n_types)
-    remainder = total - per_type * n_types
+    if total <= 0:
+        return []
+    if total < n_types:
+        # Fewer items than types: 1 item each for the first `total` types only
+        per_type = 0
+        remainder = total
+    else:
+        per_type = total // n_types
+        remainder = total - per_type * n_types
     out = []
     for i, ptype in enumerate(PROBLEM_TYPES):
         n = per_type + (1 if i < remainder else 0)
@@ -197,31 +210,40 @@ def generate_arithmetic_facts(seed: int, count: int = 500):
 
 
 def main():
-    script_dir = Path(__file__).parent
-    train_100 = generate_problems(10, 42)
-    write_jsonl(script_dir / "train_100.jsonl", train_100)
-    print(f"Generated train_100: {len(train_100)} problems")
-    balanced_100 = generate_balanced_problems(100, 43)
-    write_jsonl(script_dir / "balanced_train_100.jsonl", balanced_100)
-    print(f"Generated balanced_train_100: {len(balanced_100)} problems (stratified)")
-    train_1000 = generate_problems(100, 42)
-    write_jsonl(script_dir / "train_1000.jsonl", train_1000)
-    print(f"Generated train_1000: {len(train_1000)} problems")
-    train_5000 = generate_problems(500, 42)
-    write_jsonl(script_dir / "train_5000.jsonl", train_5000)
-    print(f"Generated train_5000: {len(train_5000)} problems")
-    train_50000 = generate_problems(5000, 42)
-    write_jsonl(script_dir / "train_50000.jsonl", train_50000)
-    print(f"Generated train_50000: {len(train_50000)} problems")
-    train_100000 = generate_problems(10000, 42)
-    write_jsonl(script_dir / "train_100000.jsonl", train_100000)
-    print(f"Generated train_100000: {len(train_100000)} problems")
+    from config_utils import load_config
+    config = load_config()
+    base_size = int(config.get("local_phase1_base_size", 100))
+    large_size = int(config.get("local_phase1_large_size", 500))
+    data_dir = Path(__file__).parent
+
+    n_types = len(PROBLEM_TYPES)
+    per_type_base = max(1, (base_size + n_types - 1) // n_types)
+    per_type_large = max(1, (large_size + n_types - 1) // n_types)
+
+    train_base = generate_problems(per_type_base, 42)[:base_size]
+    assert len(train_base) == base_size, f"train_phase1_base: expected {base_size} examples, got {len(train_base)}"
+    write_jsonl(data_dir / "train_phase1_base.jsonl", train_base)
+    print(f"Generated train_phase1_base: {len(train_base)} problems")
+
+    train_large = generate_problems(per_type_large, 42)[:large_size]
+    assert len(train_large) == large_size, f"train_phase1_large: expected {large_size} examples, got {len(train_large)}"
+    write_jsonl(data_dir / "train_phase1_large.jsonl", train_large)
+    print(f"Generated train_phase1_large: {len(train_large)} problems")
+
+    balanced_base = generate_balanced_problems(base_size, 43)
+    assert len(balanced_base) == base_size, f"balanced_train_phase1_base: expected {base_size}, got {len(balanced_base)}"
+    write_jsonl(data_dir / "balanced_train_phase1_base.jsonl", balanced_base)
+    print(f"Generated balanced_train_phase1_base: {len(balanced_base)} problems (stratified)")
+
+    # Stratified test set: 20 per problem type = 200 total (for per-type accuracy reporting)
     test_200 = generate_problems(20, 99)
-    write_jsonl(script_dir / "test_200.jsonl", test_200)
-    print(f"Generated test_200: {len(test_200)} problems")
-    facts = generate_arithmetic_facts(42, 500)
-    rag_dir = script_dir / "rag_documents"
+    assert len(test_200) == 200, f"test_200: expected 200 examples, got {len(test_200)}"
+    write_jsonl(data_dir / "test_200.jsonl", test_200)
+    print(f"Generated test_200: {len(test_200)} problems (stratified: 20 per type)")
+
+    rag_dir = data_dir / "rag_documents"
     rag_dir.mkdir(parents=True, exist_ok=True)
+    facts = generate_arithmetic_facts(42, 500)
     write_jsonl(rag_dir / "arithmetic_facts.jsonl", facts)
     print(f"Generated arithmetic_facts: {len(facts)} rules")
 

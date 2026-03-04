@@ -4,11 +4,16 @@ Injects top 3 most relevant rules into the prompt before each question.
 """
 
 import json
+import logging
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from config_utils import load_config
+
+logger = logging.getLogger(__name__)
 
 _INDEX = None
 _META = None
@@ -21,9 +26,7 @@ def _load_index(config=None):
     if _INDEX is not None:
         return
     if config is None:
-        import yaml
-        with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
+        config = load_config()
     _CONFIG = config
     db_path = PROJECT_ROOT / config["rag_db_path"].replace("./", "")
     index_path = db_path / "embeddings.npy"
@@ -60,14 +63,16 @@ def query_rules(instruction: str, top_k: int = 3):
 def build_augmented_prompt(instruction: str, config=None):
     """Build prompt with top 3 relevant arithmetic rules then the question."""
     if config is None:
-        import yaml
-        with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
+        config = load_config()
     top_k = config.get("rag_top_k", 3)
     try:
         _load_index(config)
         rules = query_rules(instruction, top_k=top_k)
-    except Exception:
+    except FileNotFoundError as e:
+        logger.warning("RAG index or config missing: %s. Proceeding without rules.", e)
+        rules = []
+    except (OSError, ValueError, KeyError) as e:
+        logger.warning("RAG load/query failed: %s. Proceeding without rules.", e)
         rules = []
     if not rules:
         return f"### Instruction: {instruction}\n\n### Response:"

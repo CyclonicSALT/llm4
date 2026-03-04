@@ -7,16 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-import yaml
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-
-def load_config():
-    with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+from config_utils import load_config
 
 
 def cot_response(example: dict) -> str:
@@ -81,8 +76,8 @@ def cot_response(example: dict) -> str:
 
 def main():
     config = load_config()
-    local_test = config.get("local_test", False)
-    train_base_path = PROJECT_ROOT / (config["train_100"] if local_test else config.get("train_5000", config["train_100"])).replace("./", "")
+    # Use phase1 large set for CoT (more examples); fallback to phase1 base
+    train_base_path = PROJECT_ROOT / config.get("train_phase1_large", config.get("train_phase1_base", "data/train_phase1_base.jsonl")).replace("./", "")
     cot_train_path = PROJECT_ROOT / config["cot_train"].replace("./", "")
     base_output = PROJECT_ROOT / config["base_output"].replace("./", "")
     cot_output = PROJECT_ROOT / config["cot_output"].replace("./", "")

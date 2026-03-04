@@ -7,6 +7,9 @@ env/
 models/
 output/
 
+# Project-local HuggingFace/transformers cache (delete for clean re-download)
+cache/
+
 # RAG index (built by build_index.py)
 rag/chroma_db/
 
@@ -26,6 +29,11 @@ __pycache__/
 .eggs/
 dist/
 build/
+
+# Secrets (never commit)
+.hf_token
+.env
+*.local.env
 
 # IDE and OS
 .idea/

@@ -8,8 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import yaml
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -34,9 +32,7 @@ EXPERT_TO_TYPES = {
 }
 
 
-def load_config():
-    with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+from config_utils import load_config
 
 
 def extract_features(instruction: str):
@@ -54,11 +50,9 @@ def main():
     probe_guided_path = PROJECT_ROOT / config["probe_guided_output"].replace("./", "")
     moe_output = PROJECT_ROOT / config["moe_output"].replace("./", "")
     enhanced_train_path = PROJECT_ROOT / config["enhanced_train"].replace("./", "")
-    local_test = config.get("local_test", False)
-    train_1000_path = PROJECT_ROOT / (config["train_100"] if local_test else config["train_1000"]).replace("./", "")
+    train_large_path = PROJECT_ROOT / config.get("train_phase1_large", "data/train_phase1_large.jsonl").replace("./", "")
     samples_per_expert = config.get("stage3_moe_samples", 100)
-    if local_test:
-        samples_per_expert = min(samples_per_expert, max(1, config.get("local_phase1_base_size", 100) // 4))
+    samples_per_expert = min(samples_per_expert, max(1, config.get("local_phase1_base_size", 100) // 4))
 
     print("Stage 3: MoE - load probe_guided, train 4 experts -> models/moe/")
     if not (probe_guided_path / "config.json").exists():
@@ -68,9 +62,9 @@ def main():
     expert_names = ["addition", "subtraction", "multiplication", "division_and_mixed"]
     expert_label = {e: i for i, e in enumerate(expert_names)}
 
-    # Router on train_1000
+    # Router trained on phase1 large set
     X_router, y_router = [], []
-    with open(train_1000_path, "r", encoding="utf-8") as f:
+    with open(train_large_path, "r", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue

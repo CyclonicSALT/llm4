@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 LLM4 - Full-pipeline smoke test (all stages, minimal data).
-Runs Phase 1 + Stage 0 through Stage 6 with local_test config (e.g. 10 base / 20 large)
-so the full pipeline completes quickly. Use to verify no bugs before 50k/100k.
+Runs Phase 1 + Stage 0 through Stage 6 with local_test config (e.g. base 10, large 20)
+so the full pipeline completes quickly. Use any base/large sizes in config.
 
 Set in config.yaml: local_test: true, local_phase1_base_size: 10, local_phase1_large_size: 20
 Then: python run_smoke.py
@@ -15,10 +15,12 @@ from pathlib import Path
 
 import yaml
 
-os.environ["FORCE_CPU"] = "1"
-
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
+from config_utils import use_project_cache_only
+
+use_project_cache_only()
+os.environ["FORCE_CPU"] = "1"
 
 
 def run(cmd, desc):
@@ -56,7 +58,7 @@ def main():
     run([sys.executable, str(scripts / "compare_stages.py")], "Final comparison report")
 
     print("")
-    print("Smoke test complete. Set local_test: false for full 50k/100k run (run_all.py).")
+    print("Smoke test complete. Set local_test: false and choose larger base/large for full run (run_all.py).")
 
 
 if __name__ == "__main__":

@@ -1,20 +1,21 @@
 """
 LLM4 Phase 1: Clean baseline - no pretraining.
-Compare: random_100, random_1000, guided_100 (probe-guided 100).
-All three trained from scratch (random weights). Proves data-efficiency hypothesis.
+Compare: random_base, random_large, guided_base (probe-guided). All from scratch (random weights).
+With --seed N, writes all outputs to output/seed_N/ so multi-seed runs don't overwrite; aggregate_phase1_seeds reads from there.
 """
 
+import argparse
 import json
 import random
 import subprocess
 import sys
 from pathlib import Path
 
-import yaml
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from config_utils import load_config
 
 def build_guided_dataset(failures_path: Path, train_pool_path: Path, output_path: Path, targeted_cap: int, total: int):
     """Build guided set: up to targeted_cap from failure types, fill to total with train pool."""
@@ -67,62 +68,53 @@ def build_guided_dataset(failures_path: Path, train_pool_path: Path, output_path
     return len(guided)
 
 
-def load_config():
-    with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
-
-
 def main():
+    parser = argparse.ArgumentParser(description="LLM4 Phase 1 baseline (no pretraining)")
+    parser.add_argument("--seed", type=int, default=None, help="If set, write all outputs to output/seed_{seed}/ for multi-seed aggregation")
+    args = parser.parse_args()
+
     config = load_config()
     data_dir = PROJECT_ROOT / "data"
     output_dir = PROJECT_ROOT / config["output_dir"].replace("./", "")
+    if args.seed is not None:
+        output_dir = output_dir / f"seed_{args.seed}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     local_test = config.get("local_test", False)
-    if local_test:
-        base_size = int(config.get("local_phase1_base_size", 100))
-        large_size = int(config.get("local_phase1_large_size", 500))
-        train_base_path = data_dir / "train_100.jsonl"
-        train_large_path = data_dir / "train_1000.jsonl"
-        balanced_path = PROJECT_ROOT / config.get("balanced_train_100", "data/balanced_train_100.jsonl").replace("./", "")
-        guided_path = data_dir / f"guided_{base_size}.jsonl"
-        random_output = config.get(f"random_{base_size}_output", f"./models/random_{base_size}").replace("./", "")
-        balanced_output = config.get(f"balanced_random_{base_size}_output", f"./models/balanced_random_{base_size}").replace("./", "")
-        guided_output = config.get(f"guided_{base_size}_output", f"./models/guided_{base_size}").replace("./", "")
-        scores_random = f"random_{base_size}_scores.json"
-        scores_balanced = f"balanced_random_{base_size}_scores.json"
-        scores_large = f"random_{large_size}_scores.json"
-        scores_guided = f"guided_{base_size}_scores.json"
-    else:
-        base_size, large_size = 100, 1000
-        train_base_path = data_dir / "train_100.jsonl"
-        train_large_path = data_dir / "train_1000.jsonl"
-        balanced_path = None
-        guided_path = data_dir / "guided_100.jsonl"
-        random_output = config["random_100_output"].replace("./", "")
-        balanced_output = None
-        guided_output = config["guided_100_output"].replace("./", "")
-        scores_random = "random_100_scores.json"
-        scores_balanced = None
-        scores_large = "random_1000_scores.json"
-        scores_guided = "guided_100_scores.json"
+    base_size = int(config.get("local_phase1_base_size", 100))
+    large_size = int(config.get("local_phase1_large_size", 500))
+    train_base_path = PROJECT_ROOT / config.get("train_phase1_base", "data/train_phase1_base.jsonl").replace("./", "")
+    train_large_path = PROJECT_ROOT / config.get("train_phase1_large", "data/train_phase1_large.jsonl").replace("./", "")
+    balanced_path = PROJECT_ROOT / config.get("balanced_train_phase1_base", "data/balanced_train_phase1_base.jsonl").replace("./", "")
+    guided_path = data_dir / f"guided_{base_size}.jsonl"
+    random_output = config.get(f"random_{base_size}_output", f"./models/random_{base_size}").replace("./", "")
+    balanced_output = config.get(f"balanced_random_{base_size}_output", f"./models/balanced_random_{base_size}").replace("./", "")
+    guided_output = config.get(f"guided_{base_size}_output", f"./models/guided_{base_size}").replace("./", "")
+    scores_random = f"random_{base_size}_scores.json"
+    scores_balanced = f"balanced_random_{base_size}_scores.json"
+    scores_large = f"random_{large_size}_scores.json"
+    scores_guided = f"guided_{base_size}_scores.json"
 
     failures_path = data_dir / "probe_failures.jsonl"
     targeted_cap = int(0.6 * base_size)
 
     print("=" * 60)
     print("LLM4 PHASE 1: CLEAN BASELINE (no pretraining)")
-    if local_test:
-        print(f"LOCAL TEST: base={base_size}, large={large_size}")
+    print(f"Base={base_size}, large={large_size} (from config)")
     print("=" * 60)
 
-    # 1. Generate datasets
-    print("\n[1] Generating datasets...")
-    subprocess.run(
-        [sys.executable, str(PROJECT_ROOT / "data" / "generate_arithmetic.py")],
-        cwd=PROJECT_ROOT,
-        check=True,
-    )
+    # 1. Generate datasets (skip if already run by launcher so we don't duplicate output)
+    data_dir = PROJECT_ROOT / "data"
+    need_generate = not train_base_path.exists() or not (data_dir / "test_200.jsonl").exists()
+    if need_generate:
+        print("\n[1] Generating datasets...")
+        subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "data" / "generate_arithmetic.py")],
+            cwd=PROJECT_ROOT,
+            check=True,
+        )
+    else:
+        print("\n[1] Datasets already present, skipping generation.")
 
     # 2. Train random (base_size) from scratch, evaluate
     print(f"\n[2] Training random (from scratch, {base_size} examples)...")
@@ -176,8 +168,8 @@ def main():
             "--stage", f"balanced_random_{base_size}",
         ], cwd=PROJECT_ROOT, check=True)
 
-    # 5. Train large random (local_test only when large_size > base_size)
-    if local_test and large_size > base_size:
+    # 5. Train large random (when large_size > base_size)
+    if large_size > base_size:
         large_output = config.get(f"random_{large_size}_output", f"./models/random_{large_size}").replace("./", "")
         print(f"\n[5] Training random_{large_size} (from scratch, {large_size} examples)...")
         subprocess.run([
@@ -194,23 +186,6 @@ def main():
             "--model", large_output,
             "--output", str(output_dir / scores_large),
             "--stage", f"random_{large_size}",
-        ], cwd=PROJECT_ROOT, check=True)
-    elif not local_test:
-        print(f"\n[5] Training random_1000 (from scratch, 1000 examples)...")
-        subprocess.run([
-            sys.executable,
-            str(SCRIPT_DIR / "train_model.py"),
-            "--data", str(train_large_path),
-            "--output", str(PROJECT_ROOT / config["random_1000_output"].replace("./", "")),
-            "--samples", "1000",
-            "--from-scratch",
-        ], cwd=PROJECT_ROOT, check=True)
-        subprocess.run([
-            sys.executable,
-            str(SCRIPT_DIR / "evaluate_model_hf.py"),
-            "--model", config["random_1000_output"],
-            "--output", str(output_dir / scores_large),
-            "--stage", "random_1000",
         ], cwd=PROJECT_ROOT, check=True)
 
     # 6. Train guided from scratch, evaluate

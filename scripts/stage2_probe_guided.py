@@ -9,18 +9,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-import yaml
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from config_utils import load_config
 from data.generate_arithmetic import GENERATORS
-
-
-def load_config():
-    with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
 
 
 def main():

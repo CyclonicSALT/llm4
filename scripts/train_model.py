@@ -10,18 +10,12 @@ import sys
 import time
 from pathlib import Path
 
-import yaml
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from config_utils import load_config, use_project_cache_only
 from device_utils import get_device_map, use_cpu, print_device_info
-
-
-def load_config():
-    with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
 
 
 def format_example(instruction: str, response: str) -> str:
@@ -45,6 +39,7 @@ def main():
     if args.from_scratch and args.base:
         parser.error("Use only one of --from-scratch or --base")
 
+    use_project_cache_only()
     config = load_config()
     base_model_name = config["base_model"]
     cache = config.get("model_cache", "./models/base")
@@ -62,7 +57,25 @@ def main():
         examples = examples[: args.samples]
     print(f"Loaded {len(examples)} training examples")
 
-    texts = [format_example(ex["instruction"], ex["response"]) for ex in examples]
+    # Validation split (deterministic, fixed seed)
+    val_fraction = config.get("val_fraction", 0.1)
+    val_seed = config.get("val_seed", 42)
+    n_val = max(0, min(len(examples) // 10, int(len(examples) * val_fraction)))
+    if n_val > 0:
+        import random
+        rng = random.Random(val_seed)
+        indices = list(range(len(examples)))
+        rng.shuffle(indices)
+        val_idx = set(indices[:n_val])
+        train_ex = [ex for i, ex in enumerate(examples) if i not in val_idx]
+        val_ex = [examples[i] for i in indices[:n_val]]
+        train_texts = [format_example(ex["instruction"], ex["response"]) for ex in train_ex]
+        val_texts = [format_example(ex["instruction"], ex["response"]) for ex in val_ex]
+        print(f"Train/val split: {len(train_texts)} train, {len(val_texts)} val (val_fraction={val_fraction}, seed={val_seed})")
+    else:
+        train_ex = examples
+        train_texts = [format_example(ex["instruction"], ex["response"]) for ex in examples]
+        val_texts = None
 
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model, TaskType
@@ -107,7 +120,7 @@ def main():
         model = AutoModelForCausalLM.from_pretrained(
             str(base_path),
             trust_remote_code=True,
-            torch_dtype="float32",
+            dtype="float32",
             device_map=get_device_map(),
             low_cpu_mem_usage=True,
         )
@@ -124,14 +137,26 @@ def main():
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
 
-    dataset = Dataset.from_dict({"text": texts})
+    train_dataset = Dataset.from_dict({"text": train_texts})
+    eval_dataset = Dataset.from_dict({"text": val_texts}) if val_texts else None
+
+    lr = config.get("learning_rate", 2e-4)
+    lr_scheduler = config.get("lr_scheduler_type", "linear")
+    warmup_ratio = 0.0
+    if args.from_scratch:
+        lr = config.get("learning_rate_from_scratch", 2e-4)
+        lr_scheduler = config.get("lr_scheduler_type_from_scratch", "cosine")
+        warmup_ratio = config.get("warmup_ratio_from_scratch", 0.1)
+        print(f"From-scratch: lr={lr}, scheduler={lr_scheduler}, warmup_ratio={warmup_ratio}")
 
     training_args = SFTConfig(
         output_dir=str(output_dir),
         per_device_train_batch_size=config.get("batch_size", 1),
         gradient_accumulation_steps=config.get("gradient_accumulation", 16),
         num_train_epochs=num_epochs,
-        learning_rate=config.get("learning_rate", 2e-4),
+        learning_rate=lr,
+        lr_scheduler_type=lr_scheduler,
+        warmup_ratio=warmup_ratio,
         save_strategy=config.get("save_strategy", "steps"),
         save_steps=config.get("save_steps", 5),
         save_total_limit=config.get("save_total_limit", 2),
@@ -143,12 +168,17 @@ def main():
         dataset_text_field="text",
         max_length=max_seq,
         packing=False,
+        eval_strategy="epoch" if eval_dataset is not None else "no",
+        load_best_model_at_end=eval_dataset is not None,
+        metric_for_best_model="eval_loss" if eval_dataset is not None else None,
+        greater_is_better=False,
     )
 
     trainer = SFTTrainer(
         model=model,
         args=training_args,
-        train_dataset=dataset,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         callbacks=[ProgressCallback()],
     )
 

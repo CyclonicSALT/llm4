@@ -1,8 +1,8 @@
 # LLM4 – Data efficiency from scratch (no pretraining)
 
-Test whether **probe-guided examples** can match **brute-force random** when training a model with **no pretraining** (random weights). Same 0.5B architecture as Qwen2.5-0.5B-Instruct, zero pretrained knowledge. Supports **local smoke test** (10/20 examples, full pipeline), **local dev** (100/500), and **full run** (50k/100k on Kaggle).
+Test whether **probe-guided examples** can match **brute-force random** when training a model with **no pretraining** (random weights). Same 0.5B architecture as Qwen2.5-0.5B-Instruct, zero pretrained knowledge. **No fixed training sizes** — choose any base and large size in config or via the UI; data is generated to match.
 
-**Pull from GitHub** to run on Kaggle or locally; all paths are relative. Use `local_test: false` in `config.yaml` for the full 50k/100k pipeline.
+**Pull from GitHub** to run on Kaggle or locally; all paths are relative. Set `local_test: true` for CPU/small runs, `false` for GPU; base/large sizes are always from config (e.g. 10/20 smoke, 100/500, 5000/20000).
 
 ---
 
@@ -18,21 +18,19 @@ Test whether **probe-guided examples** can match **brute-force random** when tra
 
 ## Quick run
 
-### Smoke test (10/20, full pipeline, CPU)
+### Smoke test (full pipeline, CPU)
 
-To check that **the entire pipeline** (Phase 1 + Stage 0 through Stage 6: CoT, probe_guided, MoE, prune, QAT, RAG) runs without bugs:
-
-Set in `config.yaml`: `local_test: true`, `local_phase1_base_size: 10`, `local_phase1_large_size: 20`. Then:
+To check that **the entire pipeline** (Phase 1 + Stage 0 through Stage 6) runs without bugs, set e.g. `local_phase1_base_size: 10`, `local_phase1_large_size: 20` in `config.yaml`, then:
 
 ```bash
 python run_smoke.py
 ```
 
-Runs all stages with minimal data. When it completes, switch to 100/500 or 50k/100k for real runs.
+Data is generated for your chosen sizes. Use any base/large for real runs (e.g. 100/500, 5000/20000).
 
-### Local test (100/500, Phase 1 + Stage 0 only)
+### Local (Phase 1 + Stage 0 only)
 
-Set `local_test: true` and `local_phase1_base_size: 100`, `local_phase1_large_size: 500`:
+Set base/large in config (or use the UI). Then:
 
 ```bash
 python run_local.py
@@ -42,13 +40,13 @@ Runs: data generation → Phase 1 (random, balanced random, guided, large random
 
 ### Full pipeline (e.g. Kaggle GPU)
 
-Set `local_test: false` in `config.yaml` (and use 50k/100k scale if configured). Then:
+Set `local_test: false` in `config.yaml`, choose base/large sizes, then:
 
 ```bash
 python run_all.py
 ```
 
-- **Phase 1**: random_50k, balanced_random_50k, guided_50k, random_100k (or single-seed 100/1000 when `local_test` was true).
+- **Phase 1**: random_base, balanced_random_base, guided_base, random_large (sizes from config).
 - **Phase 2**: Stage 0 → CoT → probe_guided → MoE → prune → QAT → RAG → comparison report.
 
 ### Shell (e.g. Kaggle)
@@ -63,16 +61,16 @@ All paths are relative. Outputs go to `output/` as JSON.
 
 ## Config
 
-- **`local_test`**: `true` = CPU, small data (smoke 10/20 or dev 100/500); `false` = full 50k/100k.
-- **`local_phase1_base_size`**: Base size for Phase 1 when `local_test` (e.g. 10 for smoke, 100 for dev).
-- **`local_phase1_large_size`**: Large (brute-force) size when `local_test` (e.g. 20 for smoke, 500 for dev).
+- **`local_test`**: `true` = use CPU / small runs; `false` = GPU / longer runs.
+- **`local_phase1_base_size`**: Phase 1 base training size (any positive integer). Data is generated to match.
+- **`local_phase1_large_size`**: Phase 1 large (brute-force) size. No fixed tiers — choose any size (e.g. 10/20, 100/500, 5000/20000).
 - **Phase 1 (full run)**: `phase1_base_size` / `phase1_large_size` (e.g. 50k / 100k) when `local_test: false`.
 
 ---
 
 ## Phase 1: Clean baseline
 
-1. Generate datasets: `train_100.jsonl`, `balanced_train_100.jsonl`, `train_1000.jsonl`, `test_200.jsonl`, `arithmetic_facts.jsonl` (and larger sets when needed).
+1. Generate datasets: `data/generate_arithmetic.py` reads config and creates `train_phase1_base.jsonl`, `train_phase1_large.jsonl`, `balanced_train_phase1_base.jsonl`, `test_200.jsonl`, `arithmetic_facts.jsonl` with counts matching your chosen base/large sizes.
 2. Train **random** (base_size) from scratch → evaluate.
 3. Use failures to build **probe-guided** dataset (targeted + pool to base_size).
 4. Train **balanced random** (stratified) from scratch → evaluate.
@@ -114,7 +112,7 @@ RAG index: run `python rag/build_index.py` (uses `data/rag_documents/arithmetic_
 - `run_smoke.py` – Full pipeline with smoke sizes (10/20); requires `local_test: true`.
 - `run_local.py` – Phase 1 + Stage 0 only (local_test sizes).
 - `run_all.py` – Full pipeline (Phase 1 + all stages).
-- `data/` – `generate_arithmetic.py`, `train_*.jsonl`, `balanced_train_100.jsonl`, `test_200.jsonl`, `rag_documents/arithmetic_facts.jsonl`.
+- `data/` – `generate_arithmetic.py` (generates data to match config sizes), `train_phase1_base.jsonl`, `train_phase1_large.jsonl`, `balanced_train_phase1_base.jsonl`, `test_200.jsonl`, `rag_documents/arithmetic_facts.jsonl`.
 - `scripts/` – `train_model.py` (`--from-scratch`, `--base`), `evaluate_model_hf.py`, `phase1_baseline.py`, `stage0_train_base.py` … `stage6_rag_integrate.py`, `compare_stages.py`.
 - `rag/` – `build_index.py`, `query_rag.py`.
 - `output/` – All scores, `phase1_report.json`, `stacking_report.json`.

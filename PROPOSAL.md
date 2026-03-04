@@ -4,6 +4,26 @@ This document describes how each suggested improvement could be implemented in t
 
 ---
 
+## Implemented vs deferred (status)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| **Multiple seeds (Phase 1)** | **Implemented** | `phase1_baseline.py --seed N` writes to `output/seed_N/`; `aggregate_phase1_seeds.py` reads from there. |
+| **Balanced random baseline** | **Implemented** | Stratified sampling in data generation; Phase 1 trains and compares balanced_random. |
+| **Validation split + val loss** | **Implemented** | `train_model.py`: 90/10 split (config `val_fraction`, `val_seed`), `eval_dataset`, `evaluation_strategy="epoch"`, `load_best_model_at_end`. |
+| **Bootstrap CIs on test metrics** | **Implemented** | `evaluate_model_hf.py --bootstrap-n 500` reports 95% CI in output and JSON. |
+| **Stratified test set** | **Implemented** | Test set generated with 20 per problem type (200 total); eval reports per-type accuracy. |
+| **LR schedule for from-scratch** | **Implemented** | `train_model.py`: when `--from-scratch`, uses `cosine` scheduler, `warmup_ratio_from_scratch`, `learning_rate_from_scratch`. |
+| **Failure mode categorization** | **Implemented** | Eval assigns `wrong_operation`, `off_by_one`, `carry_error`, `other` to errors; table in output and JSON. |
+| **LoRA rank / expert specialization** | **Deferred** | Single rank; no rank sweep or weight analysis. |
+| **Perplexity** | **Implemented** | Eval computes perplexity over answer tokens; in output and JSON (disable with `--no-perplexity`). |
+| **Ablation table** | **Implemented** | `stage6_rag_integrate.py` runs no-RAG and RAG; `compare_stages` includes `stage6_no_rag` and `stage6_rag`. |
+| **Smarter RAG** | **Deferred** | Fixed top-k retrieval only. |
+
+**Current limitations (for interpreting results):** Reported accuracies are single-run (or mean over seeds for Phase 1) with **no validation split** and **no bootstrap confidence intervals**. Conclusions like “guided ≥ random_large” are therefore subject to (a) possible overfitting to the training set and (b) sampling variance on the test set. Implementing validation and bootstrap CIs would make the experiment’s conclusions stronger and align with what the proposal recommends.
+
+---
+
 ## Compute budget and priority order
 
 Several suggestions (multiple seeds, rank sweep, smarter RAG) increase compute. If time or budget is limited, use this order:

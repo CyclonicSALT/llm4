@@ -15,11 +15,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 EXPECTED_KEYS = ["random_accuracy", "balanced_random_accuracy", "guided_accuracy", "random_large_accuracy"]
 
-
-def load_config():
-    import yaml
-    with open(PROJECT_ROOT / "config.yaml", "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+from config_utils import load_config
 
 
 def main():

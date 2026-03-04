@@ -6,6 +6,7 @@ Run on Kaggle P100 or locally. All paths relative.
 When local_test is false, Phase 1 runs with seeds 42, 43, 44 (required for main claim).
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +15,9 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
+from config_utils import use_project_cache_only
+
+use_project_cache_only()
 
 
 def run(cmd, desc):
